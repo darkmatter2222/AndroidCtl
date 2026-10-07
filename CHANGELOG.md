@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Keep interactive ADB/SDK clients in the executing account’s Android home while connecting to the shared managed ADB server. Fix non-root permission failures and false degraded status without relaxing service-home permissions.
+
 - Fix ADB server crash on releases that reject numeric hosts in listener socket specifications. Use loopback-default `tcp:PORT` for both the managed server and client environment; never enable all-interface listening.
 
 ## 0.1.0 — 2026-10-07

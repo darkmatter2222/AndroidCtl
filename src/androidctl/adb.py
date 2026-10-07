@@ -1,4 +1,4 @@
-from .sdk import SDK, environment
+from .sdk import SDK, client_environment
 from .util import run
 
 
@@ -7,7 +7,7 @@ def command(cfg, instance, args, *, check=True, capture=True, timeout=15):
     # automatic discovery range as well as on current tools.
     return run(
         [SDK(cfg).tool("adb"), "-s", instance.serial] + list(args),
-        env=environment(cfg),
+        env=client_environment(cfg),
         timeout=timeout,
         check=check,
         capture=capture,
@@ -16,7 +16,10 @@ def command(cfg, instance, args, *, check=True, capture=True, timeout=15):
 
 def connect(cfg, instance):
     return run(
-        [SDK(cfg).tool("adb"), "connect", instance.serial], env=environment(cfg), timeout=10, check=False
+        [SDK(cfg).tool("adb"), "connect", instance.serial],
+        env=client_environment(cfg),
+        timeout=10,
+        check=False,
     )
 
 

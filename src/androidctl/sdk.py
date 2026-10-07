@@ -1,6 +1,7 @@
 """Capability-detected current Android CLI with sdkmanager fallback."""
 
 import os
+import pwd
 import re
 from pathlib import Path
 
@@ -28,10 +29,19 @@ def environment(cfg):
     return env
 
 
+def client_environment(cfg):
+    """Keep the managed ADB endpoint, but use the executing account's state."""
+    env = environment(cfg)
+    account = pwd.getpwuid(os.geteuid())
+    home = cfg.service_home if account.pw_name == cfg.service_user else account.pw_dir
+    env.update(HOME=home, ANDROID_USER_HOME=str(Path(home) / ".android"))
+    return env
+
+
 class SDK:
     def __init__(self, cfg):
         self.cfg = cfg
-        self.env = environment(cfg)
+        self.env = client_environment(cfg)
         if os.geteuid() == 0:
             # Root package administration must not create root-owned preferences
             # in the non-root emulator account's Android home.
