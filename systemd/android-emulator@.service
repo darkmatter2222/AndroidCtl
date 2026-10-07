@@ -1,0 +1,38 @@
+[Unit]
+Description=Persistent Android emulator %i
+Requires=android-adb.service
+After=android-adb.service network-online.target
+Wants=network-online.target android-adb-proxy@%i.service
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=exec
+User=@SERVICE_USER@
+Group=@SERVICE_GROUP@
+UMask=0077
+Environment=HOME=@SERVICE_HOME@
+ExecStartPre=+/usr/local/bin/androidctl _service preflight %i
+ExecStart=/usr/local/bin/androidctl _service launch %i
+ExecStartPost=/usr/local/bin/androidctl _service postboot %i
+ExecStop=/usr/local/bin/androidctl _service stop %i
+ExecStopPost=+/usr/local/bin/androidctl _service release %i
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=@START_TIMEOUT@
+TimeoutStopSec=@STOP_TIMEOUT@
+KillMode=control-group
+KillSignal=SIGTERM
+SendSIGKILL=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=@AVD_ROOT@ @SERVICE_HOME@ @RUNTIME_ROOT@
+ProtectHome=yes
+PrivateTmp=yes
+DevicePolicy=closed
+DeviceAllow=/dev/kvm rw
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,20 @@
+[Unit]
+Description=Dedicated loopback AndroidCtl ADB server
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=exec
+User=@SERVICE_USER@
+Group=@SERVICE_GROUP@
+Environment=HOME=@SERVICE_HOME@
+ExecStart=/usr/local/bin/androidctl _service adb-server
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=@SERVICE_HOME@
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+UMask=0077

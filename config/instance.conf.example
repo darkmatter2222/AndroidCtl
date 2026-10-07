@@ -1,0 +1,17 @@
+[instance]
+id = 01
+name = Pixel8Pro_API35_01
+api = 35
+profile = pixel_8_pro
+image = google_apis
+console_port = 5554
+local_adb_port = 5555
+remote_adb_port = 15551
+architecture = x86_64
+ram_mb = 4096
+cpu_cores = 4
+disk_size = 16G
+gpu_mode = software
+dri_prime = auto
+gpu_pci =
+autostart = false

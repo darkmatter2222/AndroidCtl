@@ -1,0 +1,11 @@
+# Changelog
+
+## 0.1.0 — 2026-10-07
+
+- Initial native Ubuntu/KVM AndroidCtl implementation.
+- Persistent per-instance AVDs, multiple API images, permanent ports, validated profiles.
+- systemd lifecycle, boot detection, bounded crash restarts and controlled shutdown.
+- Loopback-first ADB proxy, explicit Mesa GPU selection and software rendering.
+- Resource admission across CLI, systemd and autostart; serialized SDK/config mutations.
+- Installer, offline upgrade, data-preserving uninstall, tests, CI and operational docs.
+- Real-host KVM/GPU acceptance remains required; see validation documentation.

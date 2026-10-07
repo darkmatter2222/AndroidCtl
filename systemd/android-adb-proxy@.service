@@ -1,0 +1,21 @@
+[Unit]
+Description=ADB endpoint for Android instance %i
+BindsTo=android-emulator@%i.service
+PartOf=android-emulator@%i.service
+After=android-emulator@%i.service
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=exec
+User=@SERVICE_USER@
+Group=@SERVICE_GROUP@
+ExecStart=/usr/local/bin/androidctl _service proxy %i
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+UMask=0077
