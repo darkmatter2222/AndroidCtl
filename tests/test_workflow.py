@@ -24,6 +24,16 @@ class WorkflowTest(unittest.TestCase):
         )
         Path(self.cfg.avd_root).mkdir()
 
+    @patch("androidctl.service.os.execve")
+    @patch("androidctl.service.SDK.tool", return_value="/sdk/adb")
+    def test_adb_server_uses_compatible_loopback_listener(self, tool, execute):
+        service.adb_server(self.cfg)
+        binary, args, env = execute.call_args.args
+        self.assertEqual(args, ["/sdk/adb", "-L", "tcp:5038", "server", "nodaemon"])
+        self.assertNotIn("-a", args)
+        self.assertEqual(env["ADB_SERVER_SOCKET"], "tcp:5038")
+        self.assertEqual(env["ANDROID_ADB_SERVER_PORT"], "5038")
+
     @patch("androidctl.instance.shutil.disk_usage")
     @patch("androidctl.instance.systemd.gpu_policy")
     @patch("androidctl.instance.avd.create")

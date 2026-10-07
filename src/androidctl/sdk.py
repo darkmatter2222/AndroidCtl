@@ -20,7 +20,7 @@ def environment(cfg):
         ANDROID_SDK_ROOT=cfg.sdk_root,
         ANDROID_AVD_HOME=cfg.avd_root,
         ANDROID_USER_HOME=str(Path(cfg.service_home) / ".android"),
-        ADB_SERVER_SOCKET=f"tcp:127.0.0.1:{cfg.adb_server_port}",
+        ADB_SERVER_SOCKET=f"tcp:{cfg.adb_server_port}",
         ANDROID_ADB_SERVER_PORT=str(cfg.adb_server_port),
         ADB_LOCAL_TRANSPORT_MAX_PORT="5683",
         QT_QPA_PLATFORM="offscreen",

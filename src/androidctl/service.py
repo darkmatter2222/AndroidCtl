@@ -186,5 +186,7 @@ def proxy(cfg, obj):
 
 
 def adb_server(cfg):
-    args = [SDK(cfg).tool("adb"), "-L", f"tcp:127.0.0.1:{cfg.adb_server_port}", "server", "nodaemon"]
+    # ADB's listener parser does not accept numeric hostnames in some releases.
+    # A hostless tcp:PORT binds loopback unless -a is explicitly supplied.
+    args = [SDK(cfg).tool("adb"), "-L", f"tcp:{cfg.adb_server_port}", "server", "nodaemon"]
     os.execve(args[0], args, environment(cfg))
