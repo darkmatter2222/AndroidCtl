@@ -3,7 +3,6 @@
 import json
 import os
 import signal
-import socket
 import time
 from pathlib import Path
 
@@ -56,13 +55,7 @@ def preflight(cfg, obj):
                 7,
             )
         address = host.bind_address(cfg)
-        with socket.socket() as sock:
-            try:
-                sock.bind((address, obj.remote_adb_port))
-            except OSError as exc:
-                raise Error(
-                    f"Cannot bind configured endpoint {address}:{obj.remote_adb_port}: {exc}", 6
-                ) from exc
+        ports.available([obj.remote_adb_port], address=address)
         atomic_write(Path(cfg.runtime_root) / f"endpoint-{obj.id}", address + "\n")
         atomic_write(reservation(cfg, obj.id), json.dumps({"ram_mb": obj.ram_mb, "id": obj.id}))
         print(f"Preflight OK; endpoint {address}:{obj.remote_adb_port}", flush=True)
@@ -150,7 +143,12 @@ def graceful_stop(cfg, obj):
 
     try:
         adb.command(cfg, obj, ["shell", "sync"], check=False, timeout=10)
-        adb.command(cfg, obj, ["emu", "kill"], check=False, timeout=10)
+        result = adb.command(cfg, obj, ["emu", "kill"], check=False, timeout=10)
+        if result.returncode:
+            print(
+                f"Emulator console shutdown request failed: {(result.stderr or result.stdout).strip()}",
+                flush=True,
+            )
     except Error as exc:
         print(f"Graceful ADB request unavailable: {exc}", flush=True)
     deadline = time.monotonic() + cfg.stop_timeout

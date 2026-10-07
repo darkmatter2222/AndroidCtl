@@ -27,13 +27,16 @@ def allocate(value, console_base=5554, remote_base=15550, console=None, remote=N
     return validate(c, c + 1, r)
 
 
-def available(ports):
+def available(ports, address="0.0.0.0"):
     # Wildcard bind also detects listeners on other local IPv4 interfaces.
-    # No SO_REUSEADDR: a conflicting listener must never be reused.
+    # Reuse expired connections, never a live listener: no SO_REUSEPORT.
+    # listen() also checks competing sockets that have bound with reuse enabled.
     for port in ports:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             try:
-                sock.bind(("0.0.0.0", port))
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                sock.bind((address, port))
+                sock.listen(1)
             except OSError as exc:
                 raise Error(
                     f"TCP port {port} is occupied/unavailable; inspect: sudo ss -ltnp 'sport = :{port}'", 6

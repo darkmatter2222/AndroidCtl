@@ -11,6 +11,7 @@ Type=exec
 User=@SERVICE_USER@
 Group=@SERVICE_GROUP@
 ExecStart=/usr/local/bin/androidctl _service proxy %i
+SuccessExitStatus=143
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=yes

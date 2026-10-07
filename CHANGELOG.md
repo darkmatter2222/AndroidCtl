@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Allow immediate port reuse after closed TCP connections while continuing to reject live listeners; fix rapid restart preflight failures.
+- Send emulator console shutdown to the emulator serial, report rejected shutdown requests, and treat socat’s normal SIGTERM exit as successful.
+
 - Keep interactive ADB/SDK clients in the executing account’s Android home while connecting to the shared managed ADB server. Fix non-root permission failures and false degraded status without relaxing service-home permissions.
 
 - Fix ADB server crash on releases that reject numeric hosts in listener socket specifications. Use loopback-default `tcp:PORT` for both the managed server and client environment; never enable all-interface listening.
