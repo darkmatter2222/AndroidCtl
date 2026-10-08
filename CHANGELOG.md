@@ -1,3 +1,11 @@
+# Unreleased: four-device fleet
+
+- Add fleet setup/start/stop/restart/status/screen/watch and boot enable/disable.
+- Preserve existing AVDs; pin native Pixel 8 Pro display and clear logical overrides at boot.
+- Use explicit SwANGLE and per-instance guest Vulkan disable for fleet setup.
+- Add independent systemd observer with rotating JSON state logs and heartbeats.
+- Document four-device upgrade, screen access, SSH persistence and hardware validation limits.
+
 # Changelog
 
 ## Unreleased

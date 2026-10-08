@@ -11,6 +11,7 @@ values = {
     "SERVICE_HOME": "/var/lib/androidctl",
     "AVD_ROOT": "/var/lib/androidctl/avd",
     "RUNTIME_ROOT": "/run/androidctl",
+    "LOG_ROOT": "/var/log/androidctl",
     "START_TIMEOUT": "360",
     "STOP_TIMEOUT": "100",
 }

@@ -21,7 +21,7 @@ def properties(ident):
             "systemctl",
             "show",
             unit(ident),
-            "--property=ActiveState,SubState,MainPID,ActiveEnterTimestamp,Result",
+            "--property=ActiveState,SubState,MainPID,ActiveEnterTimestamp,Result,NRestarts,ExecMainStatus",
         ],
         check=False,
     )

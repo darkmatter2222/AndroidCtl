@@ -98,6 +98,10 @@ def launch(cfg, obj):
     ]
     # Block physical fallback via cgroup DevicePolicy; no writable-system,
     # wipe-data, read-only multiinstance, or automatic snapshot flags.
+    if obj.native_pixel_display:
+        args += ["-skin", "1344x2992", "-dpi-device", "480"]
+    if obj.disable_guest_vulkan:
+        args += ["-feature", "-Vulkan"]
     os.execve(args[0], args, env)
 
 
@@ -113,6 +117,13 @@ def postboot(cfg, obj):
         time.sleep(2)
     else:
         raise Error("Android boot timeout; check renderer and emulator journal.", 9)
+    if obj.native_pixel_display:
+        # Clear persistent logical overrides from previous performance tuning.
+        adb.command(cfg, obj, ["shell", "wm", "size", "reset"])
+        adb.command(cfg, obj, ["shell", "wm", "density", "reset"])
+        size = adb.command(cfg, obj, ["shell", "wm", "size"]).stdout
+        if "Physical size: 1344x2992" not in size or "Override size:" in size:
+            raise Error(f"Native Pixel display verification failed: {size.strip()}", 9)
     if cfg.postboot:
         commands = [
             ["shell", "settings", "put", "global", "development_settings_enabled", "1"],

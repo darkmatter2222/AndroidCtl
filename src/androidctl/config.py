@@ -127,6 +127,8 @@ class Instance:
     dri_prime: str = "auto"
     gpu_pci: str = ""
     autostart: bool = False
+    native_pixel_display: bool = False
+    disable_guest_vulkan: bool = False
 
     @property
     def package(self):

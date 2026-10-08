@@ -3,7 +3,7 @@ import json
 import sys
 from dataclasses import asdict
 
-from . import __version__, adb, gpu, health, host, instance, service, systemd
+from . import __version__, adb, fleet, gpu, health, host, instance, service, systemd
 from .config import Config, convert, get_instance, instances, load, save
 from .errors import Error
 from .sdk import SDK
@@ -17,6 +17,14 @@ def parser():
     p.add_argument("--config", default="/etc/androidctl/androidctl.conf")
     sub = p.add_subparsers(dest="command")
     sub.add_parser("version")
+    f = sub.add_parser("fleet").add_subparsers(dest="action", required=True)
+    setup = f.add_parser("setup")
+    setup.add_argument("--api", type=int, default=35)
+    for action in ("start", "stop", "restart", "enable", "disable", "status", "screen"):
+        cmd = f.add_parser(action)
+        cmd.add_argument("ids", nargs="*")
+    f.add_parser("watch")
+    f.add_parser("_monitor", help=argparse.SUPPRESS)
     sub.add_parser("doctor").add_argument("--json", action="store_true")
     for name in ("list", "ports", "profiles"):
         sub.add_parser(name).add_argument("--json", action="store_true")
@@ -111,6 +119,10 @@ def main(argv=None):
                 fn = {"stop": service.graceful_stop}.get(args.action, getattr(service, args.action, None))
                 fn(cfg, obj)
             return 0
+        if cmd == "fleet":
+            if args.config != "/etc/androidctl/androidctl.conf":
+                raise Error("Fleet commands require the installed configuration.")
+            return fleet.dispatch(cfg, args)
         if cmd == "doctor":
             rows = host.doctor(cfg)
             output(rows, args.json)

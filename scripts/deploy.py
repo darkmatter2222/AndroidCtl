@@ -33,6 +33,7 @@ def assert_stopped(cfg):
 
 
 def copy_application(cfg, account):
+    run(["systemctl", "stop", "android-fleet-monitor.service"], check=False)
     destination = Path("/usr/local/lib/androidctl")
     destination.mkdir(parents=True, exist_ok=True)
     staging = destination / "androidctl.new"
@@ -54,6 +55,7 @@ def copy_application(cfg, account):
         "SERVICE_HOME": cfg.service_home,
         "AVD_ROOT": cfg.avd_root,
         "RUNTIME_ROOT": cfg.runtime_root,
+        "LOG_ROOT": cfg.log_root,
         "START_TIMEOUT": str(cfg.boot_timeout + 60),
         "STOP_TIMEOUT": str(cfg.stop_timeout + 40),
     }
@@ -67,6 +69,11 @@ def copy_application(cfg, account):
     run(["systemctl", "daemon-reload"])
     for obj in instances(cfg):
         systemd.gpu_policy(obj)
+    if (
+        run(["systemctl", "is-enabled", "--quiet", "android-fleet-monitor.service"], check=False).returncode
+        == 0
+    ):
+        run(["systemctl", "start", "android-fleet-monitor.service"])
 
 
 def bootstrap_sdk(cfg):
@@ -218,7 +225,13 @@ def uninstall(args):
             systemd.action("disable", obj.id)
             systemd.remove_policy(obj.id)
         run(["systemctl", "stop", "android-adb.service"], check=False)
-        for name in ("android-emulator@.service", "android-adb-proxy@.service", "android-adb.service"):
+        run(["systemctl", "disable", "--now", "android-fleet-monitor.service"], check=False)
+        for name in (
+            "android-emulator@.service",
+            "android-adb-proxy@.service",
+            "android-adb.service",
+            "android-fleet-monitor.service",
+        ):
             (Path("/etc/systemd/system") / name).unlink(missing_ok=True)
         Path("/usr/local/bin/androidctl").unlink(missing_ok=True)
         shutil.rmtree("/usr/local/lib/androidctl", ignore_errors=True)

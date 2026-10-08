@@ -1,0 +1,22 @@
+[Unit]
+Description=AndroidCtl fleet state observer
+After=network.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/androidctl fleet _monitor
+Restart=on-failure
+RestartSec=10
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=@LOG_ROOT@
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

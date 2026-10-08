@@ -6,6 +6,10 @@ AndroidCtl uses the **official Android Emulator, native KVM, Python's standard l
 
 **Release status:** v0.1.0 implementation with automated non-hardware tests. Real KVM boot, graphics, LAN ADB, and reboot persistence must be validated on your host before relying on it. See [validation](docs/validation.md).
 
+## Four-device fleet
+
+Manage devices 01–04 at native Pixel 8 Pro resolution (1344×2992), with SSH-independent systemd lifecycle and rotating state logs. See [fleet setup, upgrade and daily commands](docs/fleet.md). Existing device data is preserved.
+
 ## Requirements
 
 - Ubuntu **24.04 LTS**, x86_64, systemd, firmware virtualization enabled, working `/dev/kvm`.
@@ -18,8 +22,8 @@ AndroidCtl uses the **official Android Emulator, native KVM, Python's standard l
 ## Install
 
 ```bash
-git clone https://github.com/darkmatter2222/virtual_android.git
-cd virtual_android
+git clone https://github.com/darkmatter2222/AndroidCtl.git
+cd AndroidCtl
 sudo ./install.sh
 sudo androidctl doctor
 androidctl profiles
