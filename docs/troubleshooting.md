@@ -306,3 +306,14 @@ reproducing the disconnect, continue execution, then collect a fresh
 backtrace, shared-library list, and process mappings at SIGSEGV. Attaching
 briefly pauses the emulator; leave the SSH terminal running while reproducing
 with scrcpy. This is diagnosis, not a stability fix. Keep the raw core private.
+
+### Live debugger stopped on SIGUSR1, not the crash
+
+The first live capture stopped on SIGUSR1 in a metrics-related thread
+(`android::base::System::cpuTime` / `libandroid-webrtc.so`), then the batch
+script printed mappings and detached. This is not a captured SIGSEGV and
+is not evidence that those libraries caused the crash. Correct the GDB
+capture to pass SIGUSR1 and SIGUSR2 without stopping, alongside SIGPIPE,
+and explicitly stop on SIGSEGV. Attach directly to a validated MainPID;
+do not unconditionally call `androidctl start`, which refuses an already
+running/transitioning instance and aborts a fail-fast script.
