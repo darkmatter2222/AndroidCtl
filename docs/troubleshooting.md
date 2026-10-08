@@ -121,7 +121,9 @@ p.write_text(updated)
 print("Updated instance 01: gpu_mode = swiftshader")
 PY
 
-systemctl reset-failed android-emulator@01.service
+if systemctl is-failed --quiet android-emulator@01.service; then
+    systemctl reset-failed android-emulator@01.service
+fi
 androidctl start 01
 androidctl status 01 --json
 BASH
@@ -236,7 +238,9 @@ text = re.sub(r"(?m)^[ \t]*Vulkan[ \t]*=.*(?:\n|$)", "", text)
 p.write_text(text.rstrip() + "\nVulkan = off\n")
 print("Set Vulkan = off in", p)
 PY
-systemctl reset-failed android-emulator@01.service
+if systemctl is-failed --quiet android-emulator@01.service; then
+    systemctl reset-failed android-emulator@01.service
+fi
 androidctl start 01
 androidctl status 01 --json
 BASH
@@ -247,3 +251,20 @@ workload. Roll back by restoring the printed backup, or removing only the
 added `Vulkan = off` setting if no file existed, then restart the instance.
 If this also fails, obtain crash-handler/backtrace evidence and compare
 emulator versions rather than claiming either renderer workaround fixed it.
+
+### Recovery-script correction after the Vulkan edit
+
+The user confirmed that `Vulkan = off` was written successfully, but the
+script then stopped because `systemctl reset-failed` reported the stopped
+emulator unit was not loaded. An unloaded unit after stopping is not evidence
+that its unit file is missing. The fail-fast script never reached startup.
+The scripts above now reset the unit only when `systemctl is-failed` reports
+a failed state. Continue from the already-applied edit with:
+
+```bash
+sudo androidctl start 01
+sudo androidctl status 01 --json
+```
+
+There is no need to repeat the feature-file edit. Vulkan-disabled boot and
+workload stability remain unverified until new runtime evidence is supplied.
