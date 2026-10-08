@@ -268,3 +268,25 @@ sudo androidctl status 01 --json
 
 There is no need to repeat the feature-file edit. Vulkan-disabled boot and
 workload stability remain unverified until new runtime evidence is supplied.
+
+### Confirmed failure with Vulkan disabled
+
+Further logs confirmed `Feature 'Vulkan' (21) is overridden to 'disabled'`
+at 17:42:34 UTC on 2026-10-08, followed by another host emulator SIGSEGV
+at 17:43:41 UTC. Therefore disabling guest Vulkan also failed to resolve
+the incident; neither proposed renderer workaround is a validated fix.
+The user reports connecting scrcpy, seeing a UI-not-responding dialog,
+a freeze of approximately 30 seconds, and then disconnection. This timing
+does not yet establish whether screen capture triggers the failure or
+reveals an already unhealthy guest. Compare an idle run without scrcpy
+against the same run with capture, keeping graphics settings unchanged.
+
+The host's kernel core_pattern routes crashes to Ubuntu Apport. A 1.7 GB
+emulator .crash report exists in /var/crash, dated October 7, before these
+October 8 experiments. Its backtrace may help but must not be represented
+as evidence from the latest crash. Inspect the report's Date, executable
+and package information and any existing Stacktrace first. If needed,
+use apport-unpack into a new private directory and inspect its CoreDump
+with GDB and the matching executable/libraries. Do not publish the full
+report/core: it can contain guest memory and application data. No crash
+backtrace identifying the faulting library has yet been supplied.
