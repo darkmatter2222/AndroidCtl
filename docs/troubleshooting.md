@@ -1,5 +1,135 @@
 # Troubleshooting
 
+## Current workaround: explicit SwANGLE with guest Vulkan disabled
+
+**Status (2026-10-08, 18:00 UTC): user reports “I think it's working.”**
+The ANGLE backend is verified in startup logs. The last measured check had
+an unchanged emulator PID, Result=success and NRestarts=0. This is an initial
+successful result, not a completed long-duration stability test.
+
+| Setting | Current value |
+|---|---|
+| Emulator | 37.2.12.0, build 16428233 |
+| Guest | API 35, Google APIs, x86_64, Pixel 8 Pro |
+| Instance renderer | `gpu_mode = swangle` |
+| Service account feature file | `Vulkan = off` |
+| Verified GLES adapter | ANGLE 2.1.17841 over SwiftShader, driver 5.0.0 |
+| Guest resources | 4096 MB RAM, four vCPUs |
+| Failed prior attempts | Automatic software; explicit swiftshader; swiftshader with guest Vulkan off |
+
+This is the current procedure for the affected configuration. Historical
+experiments below explain the investigation; they are not recommendations
+to switch back to the failed settings. The exact upstream defect remains
+unproven. A live SIGSEGV occurred in RenderThread at an executable heap
+address, consistent with generated code, with an unreliable stack unwind.
+
+### Apply to an existing instance using the default installation paths
+
+This stops instance 01, backs up both changed configuration files when
+present, and preserves AVD apps/userdata. For custom installations, adjust
+the instance path, service account and service home first. The feature file
+is shared by all instances using that account and applies on their next
+launch. Guest apps requiring Vulkan may not work with the feature disabled.
+ANGLE may still use Vulkan internally; that is distinct from guest Vulkan.
+
+```bash
+sudo bash <<'BASH'
+set -euo pipefail
+systemctl stop android-emulator@01.service
+
+python3 - <<'PY'
+from pathlib import Path
+from datetime import datetime
+import re
+import shutil
+
+p = Path("/etc/androidctl/instances/01.conf")
+text, count = re.subn(
+    r"(?m)^[ \t]*gpu_mode[ \t]*=.*$",
+    "gpu_mode = swangle",
+    p.read_text(),
+)
+if count != 1:
+    raise SystemExit("Expected one gpu_mode setting; no changes made.")
+backup = p.with_name(p.name + ".backup-" + datetime.now().strftime("%Y%m%d-%H%M%S-%f"))
+shutil.copy2(p, backup)
+p.write_text(text)
+print("Instance backup:", backup)
+PY
+
+sudo -u androidctl python3 - <<'PY'
+from pathlib import Path
+from datetime import datetime
+import re
+import shutil
+
+p = Path("/var/lib/androidctl/.android/advancedFeatures.ini")
+p.parent.mkdir(parents=True, exist_ok=True)
+text = p.read_text() if p.exists() else ""
+if p.exists():
+    backup = p.with_name(p.name + ".backup-" + datetime.now().strftime("%Y%m%d-%H%M%S-%f"))
+    shutil.copy2(p, backup)
+    print("Feature backup:", backup)
+else:
+    print("Feature file is new; remove the added Vulkan setting to roll back.")
+text = re.sub(r"(?m)^[ \t]*Vulkan[ \t]*=.*(?:\n|$)", "", text)
+p.write_text(text.rstrip() + "\nVulkan = off\n")
+PY
+
+if systemctl is-failed --quiet android-emulator@01.service; then
+    systemctl reset-failed android-emulator@01.service
+fi
+androidctl start 01
+androidctl status 01 --json
+BASH
+```
+
+Do not rerun this on an already-working device just to update documentation.
+These are host configuration changes, not an automatic change to AndroidCtl
+defaults. Pulling the repository does not apply them. New instances still
+use the configured global default unless created with `--gpu swangle`.
+The service-account feature file must also be present for this combination.
+
+### Verify and reconnect
+
+```bash
+sudo systemctl show android-emulator@01.service -p MainPID -p NRestarts -p Result
+sudo journalctl -u android-emulator@01.service --since "5 minutes ago" --no-pager \
+  | grep -Ei 'Graphics Adapter|Graphics API Version|Vulkan.*disabled|SEGV|dumped'
+androidctl adb-endpoint 01
+```
+
+Look for an adapter string explicitly containing ANGLE, not just the selected
+mode name. A filename filter against /proc/PID/maps returned no matches in
+this successful startup; that alone did not mean ANGLE was absent.
+
+On Windows, substitute the reported address:
+
+```cmd
+adb disconnect <ANDROID_HOST>:15551
+adb connect <ANDROID_HOST>:15551
+scrcpy -s <ANDROID_HOST>:15551 --no-audio --video-codec=h264 --max-size=1024 --max-fps=30 --print-fps
+```
+
+Repeat the previously failing workload for at least 10–15 minutes, then
+longer for normal operational confidence. Verify the same PID, zero new
+restarts, responsive UI and no new SIGSEGV. A later successful replacement
+process can hide a crash if only current health is inspected.
+
+### Rollback and recovery
+
+Stop instance 01, restore the exact printed instance and feature backups,
+preserving ownership. If the feature file was newly created, remove only
+the added Vulkan setting. Restart the instance after conditionally resetting
+a failed unit as above. Failed-state reset is unnecessary for an unloaded
+unit and must not abort startup. Keep systemd's existing crash restart limit.
+
+## Investigation history
+
+The following records failed experiments and diagnostic findings in order.
+Use the current workaround above for the reported working configuration.
+
+
 | Symptom | Checks and action |
 |---|---|
 | Missing `/dev/kvm` | Enable firmware virtualization; inspect KVM modules. On a VM, confirm supported nested KVM. No software CPU emulation fallback is used. |
@@ -84,7 +214,7 @@ from the incident, not the currently running replacement. Core retention
 depends on the host's crash handler; no matching core is also a useful
 result. Do not upload a full core or unredacted logs publicly.
 
-### Try explicit SwiftShader for this software-rendering instance
+### Historical failed test: explicit SwiftShader
 
 Google documents `swiftshader` as software rendering for GLES and Vulkan:
 [Emulator graphics acceleration](https://developer.android.com/studio/run/emulator-acceleration).
@@ -203,9 +333,9 @@ core-dump does not guarantee that an inspectable core is available through
 that tool. Check `cat /proc/sys/kernel/core_pattern` to identify the configured
 crash handler before changing host crash collection.
 
-### Next isolation experiment: disable guest Vulkan
+### Historical failed test: disable guest Vulkan with SwiftShader
 
-This is proposed, not yet executed or validated on the affected host.
+This experiment was executed and still crashed, as recorded below.
 Google documents disabling Vulkan as an emulator troubleshooting option:
 https://developer.android.com/studio/run/emulator-troubleshooting
 The feature configuration uses `Vulkan = off`. Keep SwiftShader selected.
@@ -266,8 +396,7 @@ sudo androidctl start 01
 sudo androidctl status 01 --json
 ```
 
-There is no need to repeat the feature-file edit. Vulkan-disabled boot and
-workload stability remain unverified until new runtime evidence is supplied.
+There is no need to repeat the feature-file edit. The subsequent Vulkan-disabled run also crashed, as recorded below.
 
 ### Confirmed failure with Vulkan disabled
 
@@ -347,7 +476,7 @@ Google documents swangle as SwiftShader software drivers with the ANGLE
 backend. Original automatic software mode had already logged a swangle
 selection while also reporting the legacy SwiftShader GLES adapter, so a
 mode label alone is insufficient evidence that the effective backend changed.
-This experiment remains unvalidated. If the effective backend remains the
+This experiment subsequently verified ANGLE and the user reported initial success; see the current workaround above. If the effective backend remains the
 same or crashes continue, proceed to a backed-up emulator-version comparison
 rather than treating repeated mode toggles as fixes.
 
