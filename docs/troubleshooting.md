@@ -290,3 +290,19 @@ use apport-unpack into a new private directory and inspect its CoreDump
 with GDB and the matching executable/libraries. Do not publish the full
 report/core: it can contain guest memory and application data. No crash
 backtrace identifying the faulting library has yet been supplied.
+
+### Older Apport core: backtrace inconclusive
+
+The extracted report's Date is October 7, 2026 at 23:54:20. GDB confirmed
+SIGSEGV, but frame 0 and all following frames were unresolved (`??`).
+Several following values do not resemble normal return addresses, so the
+unwind is not trustworthy; missing symbols/unwind data or stack corruption
+cannot be distinguished from this output. It does not identify a crashing
+library and must not be used to attribute the newer failures to Lavapipe,
+SwiftShader, scrcpy, or a particular emulator defect.
+
+Next diagnostic: attach GDB to the current emulator MainPID before
+reproducing the disconnect, continue execution, then collect a fresh
+backtrace, shared-library list, and process mappings at SIGSEGV. Attaching
+briefly pauses the emulator; leave the SSH terminal running while reproducing
+with scrcpy. This is diagnosis, not a stability fix. Keep the raw core private.
