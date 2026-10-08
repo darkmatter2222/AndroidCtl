@@ -52,9 +52,8 @@ were downstream symptoms.
 Graphics errors and the selected Lavapipe/SwANGLE path make the renderer
 a leading suspect, but no core backtrace was supplied to identify the
 faulting library. Explicit SwiftShader is a targeted workaround to test,
-not a confirmed fix for this emulator version. At documentation time,
-the configuration edit had succeeded; successful boot and sustained
-workload stability after that edit had not yet been reported.
+not a confirmed fix for this emulator version. Follow-up evidence confirmed that SwiftShader booted successfully but also
+segfaulted; see the follow-up below. SwiftShader alone did not resolve this incident.
 
 ### Capture evidence before recovery
 
@@ -185,3 +184,66 @@ may restore the original crash behavior.
   bounded per-instance monitoring, targeted ADB reconnect, diagnostic
   capture, and restart only after sustained failure. This is not implemented
   by this documentation change and does not resolve a renderer segfault.
+
+## Follow-up: explicit SwiftShader also crashed
+
+At 17:35:22 UTC on 2026-10-08 the device finished booting with explicit
+SwiftShader. At 17:37:46 UTC its process exited with status 11/SEGV.
+The startup log confirmed SwiftShader Device (Subzero); the replacement
+startup explicitly logged both Vulkan and GLES modes as swiftshader.
+Systemd restarted the emulator and it was healthy again at 17:38:22 UTC,
+with a different PID and NRestarts=1. Thus a healthy current status does
+not mean the previous process did not crash. Reported memory peak was
+3.0 GB with no swap peak. Lavapipe alone cannot explain both failures.
+
+The host returned `coredumpctl: command not found`. A systemd result of
+core-dump does not guarantee that an inspectable core is available through
+that tool. Check `cat /proc/sys/kernel/core_pattern` to identify the configured
+crash handler before changing host crash collection.
+
+### Next isolation experiment: disable guest Vulkan
+
+This is proposed, not yet executed or validated on the affected host.
+Google documents disabling Vulkan as an emulator troubleshooting option:
+https://developer.android.com/studio/run/emulator-troubleshooting
+The feature configuration uses `Vulkan = off`. Keep SwiftShader selected.
+Apps requiring Vulkan may no longer work; this experiment does not establish
+Vulkan as the proven crash cause or disable every internal use of Vulkan.
+
+The following assumes the default service account and home confirmed by
+the installation layout. It preserves other feature settings and backs up
+an existing file. The file is shared by all emulators using that service
+home, so the change also affects other instances on their next launch.
+
+```bash
+sudo bash <<'BASH'
+set -euo pipefail
+systemctl stop android-emulator@01.service
+sudo -u androidctl python3 - <<'PY'
+from pathlib import Path
+from datetime import datetime
+import re
+import shutil
+
+p = Path("/var/lib/androidctl/.android/advancedFeatures.ini")
+p.parent.mkdir(parents=True, exist_ok=True)
+text = p.read_text() if p.exists() else ""
+if p.exists():
+    backup = p.with_name(p.name + ".backup-" + datetime.now().strftime("%Y%m%d-%H%M%S"))
+    shutil.copy2(p, backup)
+    print("Backup:", backup)
+text = re.sub(r"(?m)^[ \t]*Vulkan[ \t]*=.*(?:\n|$)", "", text)
+p.write_text(text.rstrip() + "\nVulkan = off\n")
+print("Set Vulkan = off in", p)
+PY
+systemctl reset-failed android-emulator@01.service
+androidctl start 01
+androidctl status 01 --json
+BASH
+```
+
+Inspect the new startup log for Vulkan feature status and test the same
+workload. Roll back by restoring the printed backup, or removing only the
+added `Vulkan = off` setting if no file existed, then restart the instance.
+If this also fails, obtain crash-handler/backtrace evidence and compare
+emulator versions rather than claiming either renderer workaround fixed it.
