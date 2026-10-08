@@ -331,3 +331,22 @@ Do not claim the PC is inside libGLESv2.so based only on loaded libraries.
 A generated-code/JIT mapping is a possibility, not yet confirmed.
 This strengthens the rendering-path investigation but does not identify
 a specific defective library or prove scrcpy is the root cause.
+
+### Fault mapped to executable heap; next explicit SwANGLE test
+
+The saved mappings place PC 0x573296783bfd in executable heap mapping
+0x573296783000–0x573296786000 (r-xp), offset 0xbfd. This is consistent with
+runtime-generated/JIT code, but does not identify its producer or prove
+SwiftShader memory corruption. The faulting thread was RenderThread.
+
+Next proposed test: stop instance 01, back up its instance configuration,
+change gpu_mode from swiftshader to swangle, then start it and verify the
+actual loaded GLES libraries through /proc/MainPID/maps. Keep the current
+guest Vulkan feature setting unchanged to isolate the renderer selection.
+Google documents swangle as SwiftShader software drivers with the ANGLE
+backend. Original automatic software mode had already logged a swangle
+selection while also reporting the legacy SwiftShader GLES adapter, so a
+mode label alone is insufficient evidence that the effective backend changed.
+This experiment remains unvalidated. If the effective backend remains the
+same or crashes continue, proceed to a backed-up emulator-version comparison
+rather than treating repeated mode toggles as fixes.
