@@ -317,3 +317,17 @@ capture to pass SIGUSR1 and SIGUSR2 without stopping, alongside SIGPIPE,
 and explicitly stop on SIGSEGV. Attach directly to a validated MainPID;
 do not unconditionally call `androidctl start`, which refuses an already
 running/transitioning instance and aborts a fail-fast script.
+
+### Fresh SIGSEGV captured in RenderThread
+
+A subsequent live capture stopped on SIGSEGV in thread 184, named
+RenderThread, in process 994023. The fault PC was 0x573296783bfd.
+The stack unwind remained unresolved and contained values unsuitable for
+reliable caller attribution. Loaded libraries included gfxstream and the
+legacy gles_swiftshader GLES/EGL libraries. The fault address is outside
+the main executable and named shared-library ranges shown in the excerpt;
+the complete saved process mappings are needed to classify that address.
+Do not claim the PC is inside libGLESv2.so based only on loaded libraries.
+A generated-code/JIT mapping is a possibility, not yet confirmed.
+This strengthens the rendering-path investigation but does not identify
+a specific defective library or prove scrcpy is the root cause.
