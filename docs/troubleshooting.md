@@ -350,3 +350,23 @@ mode label alone is insufficient evidence that the effective backend changed.
 This experiment remains unvalidated. If the effective backend remains the
 same or crashes continue, proceed to a backed-up emulator-version comparison
 rather than treating repeated mode toggles as fixes.
+
+### Explicit SwANGLE backend verified; early stability observation
+
+At 17:57:04 UTC on October 8, startup reported guest Vulkan disabled,
+vulkan_mode_selected:swiftshader and gles_mode_selected:swangle. Crucially,
+the adapter string now explicitly identified ANGLE 2.1.17841 (git 5fa2e61da947)
+over SwiftShader Device (Subzero), driver 5.0.0, rather than the earlier
+legacy SwiftShader 4.0.0.1 GLES adapter. The backend change is therefore
+verified by the adapter/version output, even though the earlier /proc/maps
+filename filter returned no matches.
+
+At approximately 17:59 UTC the process still had the same MainPID (995816),
+Result=success and NRestarts=0. This is a short observation of roughly two
+minutes, not confirmation of a durable fix. Current candidate configuration:
+gpu_mode=swangle plus Vulkan=off in the service account's advancedFeatures.ini.
+ANGLE's internal Vulkan use is distinct from exposing Vulkan to the Android
+guest; the ANGLE Vulkan adapter string does not contradict the disabled
+guest feature. Continue the previously failing scrcpy/UI workload for at
+least 10–15 minutes and check for unchanged PID, zero restarts, no ANRs and
+no SIGSEGV. Do not change project-wide defaults based only on this short run.
