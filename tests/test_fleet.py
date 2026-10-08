@@ -36,7 +36,7 @@ class FleetTests(unittest.TestCase):
     @patch("androidctl.fleet.get_instance")
     def test_start_queues_all_units_without_waiting_or_restarting_active(self, get, props, policy, run):
         get.side_effect = lambda cfg, ident: SimpleNamespace(id=ident)
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp, patch("androidctl.util.os.geteuid", return_value=0):
             cfg = Config(runtime_root=tmp)
             fleet.dispatch(cfg, SimpleNamespace(action="start", ids=[]))
         run.assert_called_once_with(
@@ -88,3 +88,12 @@ class FleetTests(unittest.TestCase):
     @patch("androidctl.fleet.get_instance", side_effect=Error("missing"))
     def test_monitor_missing_device_is_an_event_not_fatal(self, get):
         self.assertEqual(fleet.snapshot(Config(), "04")["state"], "unavailable")
+
+    @patch("androidctl.fleet.get_instance")
+    @patch("androidctl.util.os.geteuid", return_value=1000)
+    @patch("androidctl.fleet.run")
+    def test_non_root_cannot_start_fleet(self, run, uid, get):
+        get.side_effect = lambda cfg, ident: SimpleNamespace(id=ident)
+        with self.assertRaises(Error):
+            fleet.dispatch(Config(), SimpleNamespace(action="start", ids=[]))
+        run.assert_not_called()
