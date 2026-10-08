@@ -6,15 +6,191 @@ AndroidCtl uses the **official Android Emulator, native KVM, Python's standard l
 
 **Release status:** v0.1.0 implementation with automated non-hardware tests. Real KVM boot, graphics, LAN ADB, and reboot persistence must be validated on your host before relying on it. See [validation](docs/validation.md).
 
-## Four-device fleet
+## Four-device fleet: install, upgrade, and run
 
-Manage devices 01–04 at native Pixel 8 Pro resolution (1344×2992), with SSH-independent systemd lifecycle and rotating state logs. See [fleet setup, upgrade and daily commands](docs/fleet.md). Existing device data is preserved.
+Devices **01–04** run concurrently under systemd and survive SSH disconnects.
+Their native virtual display is **1344×2992**, the Pixel 8 Pro panel resolution,
+with emulator logical density **480 dpi**. This is the Android display itself,
+not a scrcpy window size. Setup pins the AVD hardware/skin and resets old
+`wm size`/`wm density` overrides at every boot, including the earlier
+672×1496/240 experiment. Readiness requires the expected physical resolution.
+
+### Stop existing devices before upgrading
+
+SSH into your Ubuntu host (for example, `ssh <USER>@<ANDROID_HOST>`).
+These synchronous commands stop all loaded AndroidCtl emulator/proxy services,
+including IDs outside 01–04, and work with installations predating fleet commands:
+
+```bash
+sudo systemctl stop 'android-emulator@*.service'
+sudo systemctl stop 'android-adb-proxy@*.service'
+```
+
+Check for leftover processes and listeners:
+
+```bash
+sudo ps -eo user,pid,ppid,args | grep -E '[q]emu-system|[/]opt/android-sdk/emulator|[s]ocat'
+sudo ss -ltnp | grep -E ':(555[4-9]|556[01]|1555[1-4])\b'
+```
+
+No matching output is normal when nothing remains. For each suspected leftover,
+replace `PID` below with its actual numeric PID and inspect its owner, command,
+and supervising service:
+
+```bash
+sudo systemctl status PID
+sudo ps -p PID -o user,pid,ppid,args
+```
+
+If it belongs to a service, stop that specific service first. For a confirmed
+orphaned Android emulator, use `sudo kill -TERM PID`, then repeat the checks.
+Do not blanket-kill QEMU or socat: other workloads may use them. If a process
+returns, identify and stop its supervisor before continuing. Preserve userdata;
+cleanup does not require deleting AVDs.
+
+### Upgrade an existing host
+
+For an existing checkout such as `~/virtual_android`, after stopping all devices:
+
+```bash
+cd ~/virtual_android
+git remote set-url origin https://github.com/darkmatter2222/AndroidCtl.git
+git pull --ff-only
+git log -1 --oneline
+sudo ./upgrade.sh
+sudo androidctl fleet setup
+```
+
+If Git reports local changes or divergent history, preserve/reconcile those
+changes before continuing; do not reset the checkout blindly.
+
+For a **fresh host**, use this instead of the upgrade commands:
+
+```bash
+git clone https://github.com/darkmatter2222/AndroidCtl.git
+cd AndroidCtl
+sudo ./install.sh
+sudo androidctl doctor
+sudo androidctl fleet setup
+```
+
+Review/accept the SDK licenses when prompted. Fleet setup defaults to API 35,
+preserves existing userdata, backs up edited configuration, creates missing
+devices, and raises the concurrency limit to at least four. All managed
+instances must be stopped. Existing incompatible API/profile configurations
+cause a refusal rather than replacement. Do not run the separate mixed-version
+single-device example below if you want this four-device API 35 fleet.
+
+Setup selects **SwANGLE with guest Vulkan disabled**, the workaround that
+initially succeeded after RenderThread SIGSEGV failures with software/SwiftShader.
+This is not a guarantee of four-device stability; validate the real workload.
+It uses software rendering, not the NVIDIA GPU. Default new-device allocations
+total 16 GiB guest RAM across four devices, plus host/renderer overhead.
+
+Setup preserves the saved bind address. For LAN screen access, while devices
+are still stopped, select your private interface if not already configured:
+
+```bash
+sudo androidctl config set bind_address auto
+```
+
+### Start and manage the fleet
+
+```bash
+sudo androidctl fleet start
+sudo androidctl fleet watch
+```
+
+Start queues the four systemd services and returns before boot finishes.
+Press **Ctrl+C** to leave the watcher, then inspect readiness:
+
+```bash
+sudo androidctl fleet status
+```
+
+**Closing SSH or the watcher leaves devices running.** No tmux/nohup is needed.
+Host reboot is separate: opt into boot startup with `sudo androidctl fleet enable`.
+
+| Action | Command |
+|---|---|
+| List/count devices, health, endpoints, and restarts | `sudo androidctl fleet status` |
+| Start all four (safe when already active) | `sudo androidctl fleet start` |
+| Stop all four | `sudo androidctl fleet stop` |
+| Start selected devices | `sudo androidctl fleet start 1 3` |
+| Stop device 2 | `sudo androidctl fleet stop 2` |
+| Restart device 2 | `sudo androidctl fleet restart 2` |
+| Start all at host boot | `sudo androidctl fleet enable` |
+| Disable boot startup | `sudo androidctl fleet disable` |
+| Print actual screen connection commands | `androidctl fleet screen` |
+| Print device 1 screen commands | `androidctl fleet screen 1` |
+| Follow fleet state log | `sudo androidctl fleet watch` |
+| Follow device 1 emulator logs | `sudo androidctl logs 01 --follow` |
+
+Fleet start/stop/restart are asynchronous; check status for completion.
+For a synchronous stop before an upgrade/setup, use the systemctl commands above.
+Disabling boot startup does not stop currently running devices.
+
+### Open screens from Windows
+
+Run `androidctl fleet screen` over SSH, then execute the printed commands on
+Windows where ADB and scrcpy are installed. For device 1 (replace
+`<ANDROID_HOST>` with the reported private host address):
+
+```cmd
+adb disconnect <ANDROID_HOST>:15551
+adb connect <ANDROID_HOST>:15551
+scrcpy -s <ANDROID_HOST>:15551 --no-audio --video-codec=h264 --max-fps=30 --print-fps
+```
+
+Devices 2–4 normally use 15552, 15553, and 15554; saved overrides take precedence.
+Use separate Windows terminals for simultaneous windows. Omitting `--max-size`
+avoids a capture downscale; resizing a desktop window does not change Android's
+native resolution. See the LAN access/security notes below.
+
+Verify all four native displays after boot:
+
+```bash
+for id in 01 02 03 04; do
+    echo "Device $id"
+    androidctl adb "$id" shell wm size
+    androidctl adb "$id" shell wm density
+done
+```
+
+Expect physical size 1344×2992, physical density 480, and no overrides.
+
+### Persistent monitoring and crash recovery
+
+Setup enables and starts `android-fleet-monitor.service`. It samples every
+10 seconds, records state changes and 60-second heartbeats, and writes to
+`/var/log/androidctl/fleet.jsonl` (or the configured log root). Logs rotate at
+5 MiB with five backups. Records include UTC time, ID, PID, state/substate,
+restart count, result, exit status, proxy state, and remote port.
+
+```bash
+sudo tail -n 50 /var/log/androidctl/fleet.jsonl
+sudo systemctl status android-fleet-monitor.service
+sudo androidctl fleet watch
+```
+
+The monitor observes; it does not resurrect intentionally stopped devices or
+automatically recover a frozen guest. systemd restarts crashed emulator processes,
+with a three-start/five-minute limit. Polling can miss brief transitions, so use
+per-device journals for the full crash history. A healthy result after a restart
+does not erase earlier crashes; compare PIDs and restart counts.
+
+To stop monitoring independently:
+`sudo systemctl disable --now android-fleet-monitor.service`.
+Devices continue running. Validate all four under load, disconnect/reconnect SSH,
+and check restarts and logs before relying on unattended operation.
+
+Further details and rollback: [four-device fleet guide](docs/fleet.md).
 
 ## Requirements
 
 - Ubuntu **24.04 LTS**, x86_64, systemd, firmware virtualization enabled, working `/dev/kvm`.
 - Root access for installation and lifecycle/config changes. Emulators run as an unprivileged service account.
-- RAM for each device plus a host reserve. Defaults: 4 GB/device, 4 CPU cores, maximum two simultaneous devices, 4 GB host RAM reserve.
+- RAM for each device plus a host reserve. Defaults: 4 GB/device, 4 CPU cores, maximum two simultaneous devices before fleet setup raises the limit to at least four, 4 GB host RAM reserve.
 - Free storage for SDK images and growing persistent userdata; default virtual data partition is 16 GB/device.
 - Internet access to Google's SDK downloads and Ubuntu package repositories; acceptance of Google's SDK licenses.
 - No desktop or Android Studio required. Software graphics is the initial default. Physical Mesa GPU use requires explicit selection.
@@ -67,8 +243,8 @@ Console = `5554 + 2 × (ID − 1)`; local ADB = console + 1; proxy = `15550 + ID
 By default, the proxy binds **127.0.0.1 only**. To opt into the host's primary private LAN address, stop all managed devices first:
 
 ```bash
-sudo androidctl stop 01
-sudo androidctl stop 02
+sudo systemctl stop 'android-emulator@*.service'
+sudo systemctl stop 'android-adb-proxy@*.service'
 sudo androidctl config set bind_address auto
 sudo androidctl start 01
 androidctl adb-endpoint 01
@@ -176,6 +352,15 @@ sudo ./uninstall.sh --purge        # explicitly confirm deletion of registered A
 Uninstall refuses while devices are active. Purge deliberately retains the SDK, service account/home, unregistered preserved AVDs, and unrelated files; inspect and remove those separately if desired. It never recursively deletes an arbitrary configured root directory.
 
 ## Development
+
+[![CI](https://github.com/darkmatter2222/AndroidCtl/actions/workflows/ci.yml/badge.svg)](https://github.com/darkmatter2222/AndroidCtl/actions/workflows/ci.yml)
+
+CI runs unit tests on Python 3.10, 3.12, and 3.13, plus Ruff lint/format checks,
+ShellCheck, systemd unit validation, and CLI help checks. The 55-test suite passed
+on all three versions in [run 37857561497](https://github.com/darkmatter2222/AndroidCtl/actions/runs/37857561497).
+Commit `039c3d3` fixed a fleet test that incorrectly depended on a root test runner
+and added a separate non-root rejection test. Follow the badge for current status.
+These checks do not validate KVM, graphics stability, or four-device host performance.
 
 No third-party runtime dependencies or Python virtualenv required:
 
