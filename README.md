@@ -1,10 +1,52 @@
 # AndroidCtl — native Android virtualization host
 
+[![CI](https://github.com/darkmatter2222/AndroidCtl/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/darkmatter2222/AndroidCtl/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![OpenCode_2.x-companion](https://img.shields.io/badge/OpenCode_2.x-companion-5C67F2)](https://github.com/darkmatter2222/opencode_mastergoal#quick-install)
+[![GitHub stars](https://img.shields.io/github/stars/darkmatter2222/AndroidCtl?style=social)](https://github.com/darkmatter2222/AndroidCtl/stargazers)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy_Me_a_Coffee-FFDD00?logo=buymeacoffee&logoColor=000)](https://buymeacoffee.com/j6oiubzfnh)
+
 Manage persistent Android virtual devices like small VMs: `create`, `start`, `stop`, `restart`, `list`, `status`, `logs`, and `adb`. Each device has its own Android version, userdata, official hardware profile, and permanent ports.
 
 AndroidCtl uses the **official Android Emulator, native KVM, Python's standard library, and systemd**. Android runs directly on the Ubuntu host. Existing Docker services, networking, GPU drivers, and firewall rules are not changed.
 
 **Release status:** v0.1.0 implementation with automated non-hardware tests. Real KVM boot, graphics, LAN ADB, and reboot persistence must be validated on your host before relying on it. See [validation](docs/validation.md).
+
+## Partner repositories: environments, agents and persistent goals
+
+These three projects form an Android automation stack around **OpenCode 2.x**. Each owns a different part of the workflow and can be installed independently.
+
+| Repository | Responsibility | Start here |
+|---|---|---|
+| [AndroidCtl](https://github.com/darkmatter2222/AndroidCtl) (formerly `virtual_android`) | Run persistent virtual Android environments: emulator/KVM, lifecycle, fleet health and stable ADB endpoints | [Fleet installation and operations](https://github.com/darkmatter2222/AndroidCtl#four-device-fleet-install-upgrade-and-run) |
+| [android_automation](https://github.com/darkmatter2222/android_automation) | Observe and operate Android UIs through guarded MCP tools; coordinate device workers, specialists and benchmark evidence | [Agent hierarchy and responsibilities](https://github.com/darkmatter2222/android_automation#how-the-agent-hierarchy-works) |
+| [MasterGoal](https://github.com/darkmatter2222/opencode_mastergoal) | Keep an OpenCode goal progressing across turns, verify finite outcomes and support ongoing forever automations | [Install](https://github.com/darkmatter2222/opencode_mastergoal#quick-install) · [Android forever workflow](https://github.com/darkmatter2222/opencode_mastergoal#android-automation-and-forever-goals) |
+
+The automation repository currently requires GitHub access. AndroidCtl itself is a standalone Python/systemd host manager; OpenCode 2.x is the agent backbone above it, not a prerequisite for booting an emulator. MasterGoal is useful beyond Android, and the harness can also control an existing physical or virtual device.
+
+
+### From a running Android environment to an agent goal
+
+AndroidCtl supplies the device; [android_automation](https://github.com/darkmatter2222/android_automation) supplies the UI perception, guarded actions and agent team. [MasterGoal](https://github.com/darkmatter2222/opencode_mastergoal) supplies optional persistent goal continuation inside OpenCode 2.x.
+
+```mermaid
+flowchart TD
+    M["MasterGoal in OpenCode 2.x"] --> C["Automation coordinator"]
+    C --> W1["One worker for device 01"]
+    C --> W2["One worker for device 02"]
+    W1 --> H["Android MCP harness"]
+    W2 --> H
+    H --> D1["AndroidCtl device 01: ADB endpoint"]
+    H --> D2["AndroidCtl device 02: ADB endpoint"]
+    S["systemd lifecycle and health"] --> D1
+    S --> D2
+```
+
+Start and verify the devices using the fleet instructions below. Obtain each saved endpoint with `androidctl fleet screen` or `androidctl adb-endpoint ID`, connect from the automation host with ADB, then place the exact connected serial in the automation goal. Follow the partner's [installation](https://github.com/darkmatter2222/android_automation#install-on-your-automation-host) and [agent-team guide](https://github.com/darkmatter2222/android_automation#start-here-the-agent-team) for model, MCP and ownership setup.
+
+Device IDs such as `01` are AndroidCtl lifecycle identifiers; the automation serial is the exact entry from `adb devices -l`, commonly `host:15551`. Saved port overrides take precedence. Keep one automation input owner per device and pause/join it before stopping or restarting that VM. Multiple devices can have independent workers; no companion automatically starts all of them merely because the fleet is running.
+
+For ongoing work, use [MasterGoal forever mode](https://github.com/darkmatter2222/opencode_mastergoal#android-automation-and-forever-goals). It keeps the OpenCode goal active while the host is running; systemd separately owns emulator process lifecycle. A goal stop does not stop a VM, and a VM restart does not prove an automation task succeeded.
 
 ## Four-device fleet: install, upgrade, and run
 
@@ -353,8 +395,6 @@ Uninstall refuses while devices are active. Purge deliberately retains the SDK, 
 
 ## Development
 
-[![CI](https://github.com/darkmatter2222/AndroidCtl/actions/workflows/ci.yml/badge.svg)](https://github.com/darkmatter2222/AndroidCtl/actions/workflows/ci.yml)
-
 CI runs unit tests on Python 3.10, 3.12, and 3.13, plus Ruff lint/format checks,
 ShellCheck, systemd unit validation, and CLI help checks. The 55-test suite passed
 on all three versions in [run 37857561497](https://github.com/darkmatter2222/AndroidCtl/actions/runs/37857561497).
@@ -373,3 +413,11 @@ python3 scripts/validate_units.py
 ```
 
 Development lint tools are pinned in `requirements-dev.txt`. Hardware tests are opt-in; see [validation](docs/validation.md). Report bugs without uploading keys, personal host details, userdata, or unredacted logs. [Security policy](SECURITY.md), [contributing](CONTRIBUTING.md), [official tooling sources](docs/sources.md).
+
+## Support the partner projects
+
+If these tools help you, **star the repositories you use**: [AndroidCtl](https://github.com/darkmatter2222/AndroidCtl), [android_automation](https://github.com/darkmatter2222/android_automation) and [MasterGoal](https://github.com/darkmatter2222/opencode_mastergoal). Stars help other builders discover the environment, automation and goal layers together.
+
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy_Me_a_Coffee-Support_development-FFDD00?logo=buymeacoffee&logoColor=000)](https://buymeacoffee.com/j6oiubzfnh)
+
+Bug reports, reproducible evidence and documentation improvements are welcome too.
