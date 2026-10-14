@@ -1,0 +1,13 @@
+{
+  "host": "YOUR_ANDROID_HOST",
+  "adb": "adb",
+  "scrcpy": "scrcpy",
+  "ssh": "ssh",
+  "maxFps": 30,
+  "devices": {
+    "A": { "id": "01", "port": 15551 },
+    "B": { "id": "02", "port": 15552 },
+    "C": { "id": "03", "port": 15553 },
+    "D": { "id": "04", "port": 15554 }
+  }
+}

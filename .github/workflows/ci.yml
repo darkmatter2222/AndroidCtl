@@ -22,3 +22,15 @@ jobs:
       - run: shellcheck install.sh upgrade.sh uninstall.sh scripts/*.sh
       - run: python scripts/validate_units.py
       - run: PYTHONPATH=src python -m androidctl --help
+  opencode-plugin:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test opencode/androidctl/test/core.test.mjs
+      - run: node opencode/androidctl/cli.mjs help

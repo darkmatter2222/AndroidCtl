@@ -1,0 +1,9 @@
+{
+  "name": "opencode-androidctl",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "index.ts",
+  "engines": { "node": ">=22" },
+  "scripts": { "test": "node --test test/*.test.mjs" }
+}
