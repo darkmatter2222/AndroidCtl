@@ -12,6 +12,29 @@ AndroidCtl uses the **official Android Emulator, native KVM, Python's standard l
 
 **Release status:** v0.1.0 implementation with automated non-hardware tests. Real KVM boot, graphics, LAN ADB, and reboot persistence must be validated on your host before relying on it. See [validation](docs/validation.md).
 
+## OpenCode 2.x: open a device with `/androidctl A`
+
+Install the included desktop plugin and replace the long ADB/scrcpy command sequence with:
+
+```text
+/androidctl A
+/androidctl A,B,C,D
+/androidctl status
+/androidctl logs B
+/androidctl stop B,C,D
+/androidctl deploy a four-device fleet on my Ubuntu host
+```
+
+Tell your OpenCode agent: **“Install the OpenCode 2.x plugin from this repository; follow docs/opencode.md.”** Or run from this checkout:
+
+```sh
+node opencode/install.mjs --host YOUR_ANDROID_HOST --ssh YOUR_USER@YOUR_ANDROID_HOST
+```
+
+Restart OpenCode afterward. ADB and scrcpy must be installed on the desktop running OpenCode. Aliases, host, ports and executable paths live in a separate JSON file; no private IP is hardcoded. Viewer and management commands run directly; deployment/debug/MCP commands guide your current agent through the documented workflows.
+
+[Installation, configuration, commands and extension roadmap](docs/opencode.md). This plugin is an initial implementation with automated tests; live OpenCode/GUI/SSH acceptance testing is still required on your machine.
+
 ## Partner repositories: environments, agents and persistent goals
 
 These three projects form an Android automation stack around **OpenCode 2.x**. Each owns a different part of the workflow and can be installed independently.
