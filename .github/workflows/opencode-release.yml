@@ -39,10 +39,22 @@ jobs:
           tag="opencode-v$version"
           notes="docs/releases/$tag.md"
           test -f "$notes"
-          if gh release view "$tag" >/dev/null 2>&1; then
-            echo "Release $tag already exists; leaving it unchanged."
-            exit 0
-          fi
           archive="androidctl-opencode-$version.zip"
           git archive --format=zip --output="$archive" HEAD opencode docs/opencode.md "$notes" LICENSE
-          gh release create "$tag" "$archive" --target "$GITHUB_SHA" --title "OpenCode AndroidCtl v$version" --notes-file "$notes"
+          # Recover a draft left by a transient GitHub publish/upload failure.
+          if gh release view "$tag" --json isDraft --jq .isDraft > release-state.txt 2>/dev/null; then
+            if [[ "$(cat release-state.txt)" == "false" ]]; then
+              echo "Published release $tag already exists; leaving it unchanged."
+              exit 0
+            fi
+          else
+            gh release create "$tag" --draft --target "$GITHUB_SHA" --title "OpenCode AndroidCtl v$version" --notes-file "$notes"
+          fi
+          gh release upload "$tag" "$archive" --clobber
+          for attempt in 1 2 3; do
+            if gh release edit "$tag" --draft=false; then
+              exit 0
+            fi
+            sleep 3
+          done
+          exit 1
