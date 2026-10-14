@@ -31,7 +31,7 @@ Tell your OpenCode agent: **“Install the OpenCode 2.x plugin from this reposit
 node opencode/install.mjs --host YOUR_ANDROID_HOST --ssh YOUR_USER@YOUR_ANDROID_HOST
 ```
 
-Restart OpenCode afterward. ADB and scrcpy must be installed on the desktop running OpenCode. Aliases, host, ports and executable paths live in a separate JSON file; no private IP is hardcoded. Viewer and management commands run directly; deployment/debug/MCP commands guide your current agent through the documented workflows.
+The installer registers a managed package; future updates are available in `/plugins` → check for updates → update, with no URL to re-enter. It migrates the original copied plugin while preserving device configuration. Restart OpenCode afterward. ADB and scrcpy must be installed on the desktop running OpenCode. Aliases, host, ports and executable paths live in a separate JSON file; no private IP is hardcoded. Viewer and management commands use terminal toasts/dialogs without writing chat context or invoking the model; deployment/debug/MCP commands guide your current agent through the documented workflows.
 
 [Installation, configuration, commands and extension roadmap](docs/opencode.md). This plugin is an initial implementation with automated tests; live OpenCode/GUI/SSH acceptance testing is still required on your machine.
 

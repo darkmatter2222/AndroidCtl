@@ -32,5 +32,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node --test opencode/androidctl/test/core.test.mjs
+      - run: node --test opencode/androidctl/test/core.test.mjs opencode/androidctl/test/ui.test.mjs opencode/androidctl/test/install.test.mjs
       - run: node opencode/androidctl/cli.mjs help

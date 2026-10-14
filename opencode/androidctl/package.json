@@ -1,9 +1,22 @@
 {
   "name": "opencode-androidctl",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "main": "index.ts",
-  "engines": { "node": ">=22" },
-  "scripts": { "test": "node --test test/*.test.mjs" }
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "exports": {
+    ".": "./index.ts",
+    "./tui": "./tui.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/darkmatter2222/AndroidCtl.git",
+    "directory": "opencode/androidctl"
+  }
 }

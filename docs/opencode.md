@@ -1,42 +1,51 @@
 # OpenCode 2.x AndroidCtl plugin
 
-## Install by asking your agent
+## Install and update (managed package)
 
-Give OpenCode this instruction (replace the placeholders):
+OpenCode **2.x** (SDK checked against 2.0.29), Node **22+**, ADB and scrcpy are required. Install on the desktop where the windows should appear. The viewer now runs in the terminal client, including when connected to a remote OpenCode server. A graphical desktop is required; a headless terminal cannot open a desktop window.
 
-> Install the OpenCode 2.x plugin from https://github.com/darkmatter2222/AndroidCtl. Read docs/opencode.md, check out branch `feat/opencode-androidctl`, and run `node opencode/install.mjs --host MY_ANDROID_HOST --ssh MY_SSH_USER@MY_ANDROID_HOST` on this desktop. Preserve existing OpenCode settings and androidctl.json. Check adb and scrcpy availability. Use the host's saved endpoints if ports differ. Tell me when to restart OpenCode.
-
-This installs a local plugin, not an npm-published package. Requirements: OpenCode **2.x**, Node **22+**, and `adb` plus `scrcpy` on the desktop that will show the windows. SSH is needed only for host management. No build step, npm install, cloud account or model is required for viewer/lifecycle commands. The OpenCode runtime provides `@opencode/plugin`. Version 1.x hooks/config are not supported. The adapter was type-checked and smoke-tested against the published `@opencode/plugin` 2.0.29 SDK.
-
-Manual installation from a checkout:
+From a current checkout of this repository:
 
 ```sh
-git clone --branch feat/opencode-androidctl https://github.com/darkmatter2222/AndroidCtl.git
-cd AndroidCtl
+git switch main
+git pull --ff-only
 node opencode/install.mjs --host YOUR_ANDROID_HOST --ssh YOUR_USER@YOUR_ANDROID_HOST
 ```
 
-The same command works from PowerShell, Command Prompt and a Linux/macOS shell. Windows must have Node, ADB and scrcpy installed and on PATH (or configured by absolute executable path). Test `adb version` and `scrcpy --version`. Linux needs a graphical desktop session; headless SSH cannot display a local Windows window. With a remote OpenCode server, plugin processes run on that server. Install/run OpenCode on your desktop for desktop windows.
+The default installer uses OpenCode's native package manager and remembers this moving source:
 
-Restart OpenCode after installation; try `/androidctl help`, then `/androidctl A`.
+```text
+github:darkmatter2222/AndroidCtl#main::path:opencode/androidctl
+```
 
-The installer writes `~/.config/opencode/plugins/androidctl/` and `~/.config/opencode/androidctl.json` (`XDG_CONFIG_HOME` supported). On Windows, `~` means your user home, e.g. `C:\Users\ryans`. It does not overwrite existing client configuration or edit your OpenCode JSON/JSONC. Existing plugin directories cause an explicit refusal, not replacement. If using a nonstandard OpenCode config directory, pass `--config-dir PATH`. Set `ANDROIDCTL_CONFIG` to the full JSON path if it is outside the default location.
+Existing `androidctl.json` is preserved. The old copied `~/.config/opencode/plugins/androidctl` folder is moved to `~/.config/opencode/androidctl-backups/` after successful installation, and the old `feat/opencode-androidctl` package subscription is removed if present. Other plugins are untouched. If you manually configured a local checkout path, remove that old entry as well so only one AndroidCtl package is loaded. Restart OpenCode once after migration to unload the old server-side command.
 
-OpenCode 2.x also supports installing Git subdirectory packages directly:
+**Existing 0.1.0 copied installs require this one-time migration.** A local folder has no package subscription, so `/plugins` cannot download its first update. After migration, no URL needs to be supplied again.
+
+### Normal updates
+
+1. Open **`/plugins`** (plural).
+2. Use **check for updates** (`Ctrl+R` in the current OpenCode defaults).
+3. Select **androidctl under Server** and choose **update** when available. The package's terminal component updates with it; the separate `androidctl.tui` entry is for enable/disable controls.
+
+Equivalent terminal commands, with no URL:
 
 ```sh
-opencode plugin add 'github:darkmatter2222/AndroidCtl#feat/opencode-androidctl::path:opencode/androidctl'
+opencode plugin check
+opencode plugin update
 ```
 
-Use double quotes instead of single quotes in Windows Command Prompt. This installs the plugin only: copy `opencode/androidctl/androidctl.example.json` to `~/.config/opencode/androidctl.json` and set your host. Once this branch is merged, use `#main` instead, or pin a reviewed commit hash. Do not combine this with the local installer.
+The updater tracks the moving `main` Git revision. GitHub release tags provide versioned downloads, while the package subscription provides update detection. Pinning an exact commit/tag freezes that revision; local copies are skipped by native updates. If a merge happened after OpenCode started, explicitly check rather than relying on the cached startup result. Restart if the old command remains loaded.
 
-Alternatively keep the plugin in a checkout and add its absolute directory to the OpenCode 2.x `plugins` array (merge with existing entries):
+For a fresh package-only install without the helper:
 
-```json
-{ "plugins": ["C:/Users/you/source/repos/AndroidCtl/opencode/androidctl"] }
+```sh
+opencode plugin add "github:darkmatter2222/AndroidCtl#main::path:opencode/androidctl"
 ```
 
-Use exactly one loading method to avoid duplicate registrations.
+Copy `opencode/androidctl/androidctl.example.json` to `~/.config/opencode/androidctl.json` and set your host. `~` is your user home (`C:\Users\ryans` on Ryan's Windows desktop); `XDG_CONFIG_HOME` and `ANDROIDCTL_CONFIG` overrides are supported. Executables must be on PATH or configured with absolute paths. Check `adb version` and `scrcpy --version`.
+
+For offline/local development only, `node opencode/install.mjs --local [--config-dir PATH]` still copies the package. That mode deliberately has no native update subscription. OpenCode's global managed installation uses its own global config directory; `--config-dir` is only accepted with `--local`.
 
 ## Commands
 
@@ -64,7 +73,7 @@ Use exactly one loading method to avoid duplicate registrations.
 | `/androidctl debug …` | Ask the current agent to investigate symptoms using evidence |
 | `/androidctl mcp …` | Ask the agent to set up the partner automation/MCP project |
 
-Direct commands execute without a model turn and report via a synthetic session message. Guided `deploy`, `debug`, and `mcp` commands use your current agent and its tools/model/permissions. They are not automatic unattended installers or a new autonomous agent team. See [operator runbook](../opencode/androidctl/OPERATIONS.md).
+Direct commands are terminal UI commands: viewer success uses a toast; help, status, logs, configuration and failures use dialogs. They never submit a session prompt, synthetic message, or model request and never add their output to chat context. Guided `deploy`, `debug`, and `mcp` commands use your current agent and its tools/model/permissions. They are not automatic unattended installers or a new autonomous agent team. See [operator runbook](../opencode/androidctl/OPERATIONS.md).
 
 No implicit start happens when viewing a stopped VM. Lifecycle completion is asynchronous; run `status`/`health` after start, stop, or restart. Selecting `all` means configured aliases for per-device commands; `list` and `ports` inspect the whole SSH host. Multiple viewers are allowed; repeated commands open additional windows. Closing a viewer does not stop its VM. Reconnecting ADB can interrupt an automation session on that endpoint; coordinate with the device owner.
 
@@ -89,7 +98,7 @@ Example for Ryan's four devices (this private address is an example, never a shi
 }
 ```
 
-Configuration is read on each direct command, so edits need no restart. Uppercase aliases can be extended beyond A–D. IDs are the host lifecycle IDs, not ADB serials. Override a device with `"endpoint": "other-host:16662"` instead of `port`; this also supports tunnel endpoints such as `127.0.0.1:15551` and bracketed IPv6. Explicit endpoint strings take precedence over `host`/`port`. Viewing may span multiple hosts, but **all lifecycle commands use the single management.target**, so only configure lifecycle IDs for that host.
+Configuration is read locally by the terminal client on each direct command, so edits need no restart. Uppercase aliases can be extended beyond A–D. IDs are the host lifecycle IDs, not ADB serials. Override a device with `"endpoint": "other-host:16662"` instead of `port`; this also supports tunnel endpoints such as `127.0.0.1:15551` and bracketed IPv6. Explicit endpoint strings take precedence over `host`/`port`. Viewing may span multiple hosts, but **all lifecycle commands use the single management.target**, so only configure lifecycle IDs for that host.
 
 The host already persists ports under `/etc/androidctl/instances/`. Client defaults 15551–15554 are conveniences, not discovery. Run `androidctl fleet screen` on the host or `/androidctl endpoints all`, then copy the reachable saved endpoints into client configuration. Host-reported loopback/bind addresses may not be directly reachable from your desktop.
 
@@ -101,7 +110,13 @@ Viewer stdout/stderr is saved under `~/.local/state/androidctl/viewer/` (`XDG_ST
 
 ## Update, remove, and test
 
-Update the checkout with `git pull --ff-only`. Back up/remove only the installed `plugins/androidctl` directory, then rerun the installer; it retains `androidctl.json`. Restart OpenCode. Remove that same directory to uninstall; remove any manually added `plugins` entry if you used one. Neither action stops VMs or removes AVDs. Already-open scrcpy windows stay open until closed.
+Use `/plugins` as described above for updates. Uninstall a managed package with:
+
+```sh
+opencode plugin remove "github:darkmatter2222/AndroidCtl#main::path:opencode/androidctl"
+```
+
+Remove any leftover explicitly configured local entry separately. Keep `androidctl.json` if you plan to reinstall. No uninstall step stops VMs, removes AVDs or closes existing scrcpy windows.
 
 Standalone smoke test without OpenCode (same config):
 
@@ -111,7 +126,7 @@ node opencode/androidctl/cli.mjs A,B
 node --test opencode/androidctl/test/*.test.mjs
 ```
 
-Automated tests cover argument safety, exact endpoint routing, partial failures, management routing and installation preservation. Live Windows GUI launch, SSH privilege setup and an actual OpenCode 2.x session require acceptance testing on the desktop. Test A first, then all four; confirm window titles, no unselected endpoint disconnects, native resolution, bounded logs, and failed-host messages. Existing Python tests remain unchanged.
+Automated tests cover argument safety, exact endpoint routing, partial failures, management routing, installation preservation, one-time managed migration, duplicate in-flight submissions and zero client/session API access for direct commands. Live Windows GUI launch, SSH privilege setup and an actual OpenCode 2.x session require acceptance testing on the desktop. Test A first, then all four; confirm window titles, no unselected endpoint disconnects, native resolution, bounded logs, and failed-host messages. Existing Python tests remain unchanged.
 
 ## Extension ideas / roadmap (not shipped)
 
@@ -129,4 +144,4 @@ Prioritized possibilities, kept separate from implemented commands:
 
 These are future features, not commands users can invoke today. Device deletion, arbitrary remote shell execution, silent repairs, image replacement, and automatic SDK license acceptance are intentionally outside the direct command surface.
 
-API reference used: [OpenCode 2.x plugin commands and sessions](https://dev.opencode.ai/v2/docs/build/plugins/). This integration uses `@opencode/plugin`, `Plugin.define`, command transforms, `session.synthetic`, and `session.prompt`; it does not use the OpenCode 1.x `command.execute.before` interception workaround.
+API reference used: [OpenCode 2.x plugin commands and sessions](https://dev.opencode.ai/v2/docs/build/plugins/). The terminal entrypoint uses `@opencode/plugin/tui`, a slash command in a keymap layer, and transient UI dialogs/toasts. The server entrypoint is intentionally inert. Only explicit deploy/debug/MCP workflows call `session.prompt`. No code calls `session.synthetic`. See also [terminal plugin API](https://dev.opencode.ai/v2/docs/build/plugins/cli) and [native plugin updates](https://dev.opencode.ai/v2/docs/plugins).

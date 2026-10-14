@@ -57,9 +57,9 @@ test('installer uses isolated destination, preserves configuration and refuses o
     const installer = resolve(import.meta.dirname, '../../install.mjs');
     const saved = join(dir, 'androidctl.json');
     await writeFile(saved, JSON.stringify(config()));
-    execFileSync(process.execPath, [installer, '--config-dir', dir, '--host', 'newhost']);
+    execFileSync(process.execPath, [installer, '--local', '--config-dir', dir, '--host', 'newhost']);
     assert.equal((await loadConfig(saved)).host, 'host.example');
     assert.match(await readFile(join(dir, 'plugins/androidctl/index.ts'), 'utf8'), /Plugin.define/);
-    assert.throws(() => execFileSync(process.execPath, [installer, '--config-dir', dir], { stdio: 'pipe' }));
+    assert.throws(() => execFileSync(process.execPath, [installer, '--local', '--config-dir', dir], { stdio: 'pipe' }));
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
