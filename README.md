@@ -12,6 +12,15 @@ AndroidCtl uses the **official Android Emulator, native KVM, Python's standard l
 
 **Release status:** v0.1.0 implementation with automated non-hardware tests. Real KVM boot, graphics, LAN ADB, and reboot persistence must be validated on your host before relying on it. See [validation](docs/validation.md).
 
+## Browser device workbench
+
+```sh
+python -m pip install -e .
+androidctl-web
+```
+
+Open a dense dark device grid locally: saved ADB connections, wireless pairing, draggable tiles, focus mode, screenshot previews, opt-in tap/swipe control, device inspection and native scrcpy launch. Works independently of the Linux emulator host manager on Windows/Linux/macOS. Requires local ADB; scrcpy is optional. Browser previews are refreshed screenshots, not video. See [setup, API, agent skill and limitations](docs/web-workbench.md).
+
 ## OpenCode 2.x: open a device with `/androidctl A`
 
 Install the included desktop plugin and replace the long ADB/scrcpy command sequence with:
