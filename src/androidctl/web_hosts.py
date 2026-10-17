@@ -40,6 +40,12 @@ class Hosts:
     def save(self, data):
         ident = self.word(data.get("id"), "host name")
         target = data.get("target", "")
+        if "ssh_user" in data or "ssh_host" in data:
+            user = data.get("ssh_user", "")
+            hostname = self.word(data.get("ssh_host"), "SSH hostname")
+            if not isinstance(user, str) or not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]*", user):
+                raise ValueError("Invalid SSH username; enter username separately from hostname")
+            target = f"{user}@{hostname}"
         if target != "local" and not re.fullmatch(
             r"(?:[A-Za-z0-9_][A-Za-z0-9_.-]*@)?[A-Za-z0-9][A-Za-z0-9_.-]*", target
         ):

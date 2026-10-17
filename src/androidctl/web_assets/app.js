@@ -37,7 +37,7 @@ function point(e){const r=img.getBoundingClientRect();return [Math.max(0,Math.mi
 img.onpointerdown=e=>{if(!t.armed||!img.naturalWidth||t.device.state!=='device')return;start=point(e);img.setPointerCapture(e.pointerId);};img.onpointercancel=()=>start=null;img.onpointerup=async e=>{if(!start)return;const first=start;start=null;const end=point(e);try{await action(device.serial,Math.hypot(end[0]-first[0],end[1]-first[1])<15?'tap':'swipe',{points:Math.hypot(end[0]-first[0],end[1]-first[1])<15?first:[...first,...end]});}catch(err){notice(err.message,true);}};
 $('grid').append(el);return t;}
 function stopPreview(t,message){t.epoch++;const img=t.el.querySelector('img');img.removeAttribute('src');if(t.url){URL.revokeObjectURL(t.url);t.url=null;}t.el.querySelector('.screen span').textContent=message;t.el.querySelector('.stats').textContent=message;}
-async function refresh(){const result=await(await api('/api/devices')).json();devices=result.devices;const seen=new Set();for(const d of result.devices){if(!opened.has(d.serial))continue;seen.add(d.serial);let t=tiles.get(d.serial);if(!t){t=createTile(d);tiles.set(d.serial,t);}t.device=d;managedControls(t);if(currentView==='live'&&d.state==='device'&&!t.displayLoaded){t.displayLoaded=true;t.loadDisplay().catch(e=>{t.displayLoaded=false;notice(e.message,true);});}for(const b of t.el.querySelectorAll('button')){if(['Open live view','Inspect','Apply now','Restart','Read resolutions'].includes(b.textContent))b.disabled=d.state!=='device';if(b.classList.contains('device-key'))b.disabled=d.state!=='device';}if(d.state!=='device')stopPreview(t,d.state==='disconnected'?'Disconnected — previews stopped':d.state);const operation=t.el.querySelector('.operation');operation.textContent=d.operation?d.operation.message:'';t.el.querySelector('.identity').textContent=d.name;t.el.querySelector('.state').textContent=d.state;t.el.querySelector('.state').classList.toggle('online',d.state==='device');t.el.querySelector('.meta').textContent=d.serial+' · '+(d.managed?'Android: '+d.managed.state+' · ADB: '+d.state:(d.details||'saved endpoint'));}for(const [s,t] of tiles){if(!seen.has(s)){t.el.remove();if(t.url)URL.revokeObjectURL(t.url);tiles.delete(s);}}for(const s of order){if(tiles.has(s))$('grid').append(tiles.get(s).el);}$('count').textContent=result.devices.filter(d=>d.state==='device').length+' online / '+result.devices.length+' devices';$('empty').hidden=tiles.size>0;filterTiles();renderServerNav();if(selection.kind==='controller'||selection.kind==='root')renderObject();}
+async function refresh(){const result=await(await api('/api/devices')).json();devices=result.devices;const seen=new Set();for(const d of result.devices){if(!opened.has(d.serial))continue;seen.add(d.serial);let t=tiles.get(d.serial);if(!t){t=createTile(d);tiles.set(d.serial,t);}t.device=d;managedControls(t);if(currentView==='live'&&d.state==='device'&&!t.displayLoaded){t.displayLoaded=true;t.loadDisplay().catch(e=>{t.displayLoaded=false;notice(e.message,true);});}for(const b of t.el.querySelectorAll('button')){if(['Open live view','Inspect','Apply now','Restart','Read resolutions'].includes(b.textContent))b.disabled=d.state!=='device';if(b.classList.contains('device-key'))b.disabled=d.state!=='device';}if(d.state!=='device')stopPreview(t,d.state==='disconnected'?'Disconnected — previews stopped':d.state);const operation=t.el.querySelector('.operation');operation.textContent=d.operation?d.operation.message:'';t.el.querySelector('.identity').textContent=d.name;t.el.querySelector('.state').textContent=d.state;t.el.querySelector('.state').classList.toggle('online',d.state==='device');t.el.querySelector('.meta').textContent=d.serial+' · '+(d.managed?'Android: '+d.managed.state+' · ADB: '+d.state:(d.details||'saved endpoint'));}for(const [s,t] of tiles){if(!seen.has(s)){t.el.remove();if(t.url)URL.revokeObjectURL(t.url);tiles.delete(s);}}for(const s of order){if(tiles.has(s))$('grid').append(tiles.get(s).el);}$('count').textContent=result.devices.filter(d=>d.state==='device').length+' online / '+result.devices.length+' devices';$('empty').hidden=tiles.size>0;filterTiles();renderServerNav();if(selection.kind==='controller'||selection.kind==='root'||section==='Console')renderObject();}
 async function frame(t){if(currentView!=='live'||t.el.hidden||t.busy||paused||t.previewPaused||document.hidden||t.device.state!=='device')return;t.busy=true;const epoch=t.epoch;const start=performance.now();try{const blob=await(await api('/api/frame?serial='+encodeURIComponent(t.device.serial))).blob();if(currentView!=='live'||t.el.hidden||!t.el.isConnected||t.epoch!==epoch||t.device.state!=='device')return;const url=URL.createObjectURL(blob);const img=t.el.querySelector('img');img.src=url;if(t.url)URL.revokeObjectURL(t.url);t.url=url;t.el.querySelector('.screen span').textContent='';t.el.querySelector('.stats').textContent=`${new Date().toLocaleTimeString()} · ${Math.round(performance.now()-start)} ms · ${Math.round(blob.size/1024)} KiB`;}catch(e){if(t.epoch===epoch)t.el.querySelector('.stats').textContent='Preview error: '+e.message;}finally{t.busy=false;}}
 $('refresh').onclick=safely(refresh);$('pause').onclick=()=>{paused=!paused;$('pause').textContent=paused?'Resume previews':'Pause previews';};$('width').oninput=()=>document.documentElement.style.setProperty('--tile',$('width').value+'px');$('close').onclick=()=>$('info').close();
 async function loop(){const pending=[...tiles.values()];async function worker(){while(pending.length)await frame(pending.shift());}await Promise.all([worker(),worker()]);setTimeout(loop,Number($('rate').value));}safely(refresh)();loop();setInterval(()=>{if(!document.hidden)safely(refresh)();},10000);
@@ -83,7 +83,7 @@ function renderFlow(){
   const name=field('Display name (optional)','name',d.name||'');name.required=false;
   if(method.value==='pair'){field('Pairing port','pairPort',d.pairPort||'','number','From “Pair device with pairing code” on the phone; different from the debugging port.');field('Six-digit pairing code','code','','password').pattern='[0-9]{6}';}
  }else if(kind==='server'){
-  const identity=field('Server identifier','id',d.id||'databrick','text','Stable connection identifier.');identity.pattern='[A-Za-z0-9][A-Za-z0-9_.-]*';identity.readOnly=!!d.editing;
+  const identity=field('Display identifier (not the SSH hostname)','id',d.id||'databrick','text','Stable connection identifier.');identity.pattern='[A-Za-z0-9][A-Za-z0-9_.-]*';identity.readOnly=!!d.editing;
   field('Server IP address or hostname','address',d.address||'','text','Example: 192.168.86.48').pattern='[A-Za-z0-9][A-Za-z0-9_.-]*';
   field('SSH username','user',d.user||'','text','Example: darkmatter2222. Enter only your username.').pattern='[A-Za-z0-9_][A-Za-z0-9_.-]*';
   field('SSH port','port',d.port||'22','number');
@@ -120,7 +120,7 @@ $('wizard-form').onsubmit=async e=>{
     await action(endpoint(d),'save',{name:d.name||endpoint(d)});
     await action(endpoint(d),'connect');await refresh();notice('Connected to '+endpoint(d));}
   }else if(kind==='server'){
-   await hostAction({action:'save',id:d.id,target:d.user+'@'+d.address,endpoint_host:d.address,port:Number(d.port)});
+   await hostAction({action:'save',id:d.id,ssh_user:d.user,ssh_host:d.address,endpoint_host:d.address,port:Number(d.port)});
    await hostAction({action:'scan',host:d.id});
   }else await hostAction({action:'create',host:d.host,instance:d.instance,ram:d.ram,cpus:d.cpus,api:Number(d.api),profile:d.profile,display_scale:Number(d.display_scale),runtime_ports:true,name:d.instance_name||'',disk:d.disk,image:d.image});
   $('wizard').close();if(kind==='device')navigate({kind:'controller'});if(kind==='server')navigate({kind:'server',host:d.id});if(kind!=='device'){await refreshHosts();}
@@ -137,7 +137,7 @@ function hostHelp(message){
  if(/resolve hostname/i.test(message))return 'Check the server IP and username using Edit connection. The SSH target must include both.';
  if(/Permission denied|publickey/i.test(message))return 'SSH login failed. Configure key-based login from this computer to the server.';
  if(/Host key verification/i.test(message))return 'Open a terminal and connect with SSH once to verify and trust this server.';
- if(/sudo|password/i.test(message))return 'Server access works, but AndroidCtl needs passwordless sudo for instance changes.';
+ if(/sudo.*password|password.*required/i.test(message))return 'SSH connected successfully. Start/stop/create failed because sudo requires a password. Configure noninteractive sudo for AndroidCtl on this server; changing the hostname will not fix this.';
  if(/command not found|not recognized|No such file/i.test(message))return 'AndroidCtl or SSH is missing from the command path. See the exact command error below.';
  if(/Connection refused/i.test(message))return 'The SSH port refused the connection. Check the SSH service and port.';
  if(/timed out|TimeoutExpired/i.test(message))return 'The server request timed out. Check SSH connectivity; last known instances remain visible.';
@@ -168,7 +168,7 @@ async function refreshHosts(){
 
 
   for(const [label,act]of [['Performance report','diagnostics'],['System check','doctor'],['GPU devices','gpu-list'],['Port map','ports'],['Hardware profiles','profiles'],['SDK status','sdk-status'],['SDK images','sdk-images'],['Server configuration','config']])button(reports,label,()=>hostAction({host:h.id,action:act})).disabled=op?.state==='running';
-  button(controls,'Edit connection',()=>{const at=h.target.indexOf('@');openFlow('server',{id:h.id,address:h.endpoint_host,user:at>=0?h.target.slice(0,at):'',port:h.port,editing:true});}).disabled=op?.state==='running';
+  button(controls,'Edit connection',()=>{const at=h.target.indexOf('@');openFlow('server',{id:h.id,address:at>=0?h.target.slice(at+1):h.endpoint_host,user:at>=0?h.target.slice(0,at):(/resolve hostname/i.test(h.operation?.message||'')?h.target:''),port:h.port,editing:true});}).disabled=op?.state==='running';
   button(controls,'Create a new instance…',()=>openFlow('create',{host:h.id})).disabled=op?.state==='running'||!h.inventory_known||op?.state==='error';
   box.append(card);
  }
@@ -298,7 +298,16 @@ function renderServerNav(){
  if(focusKey){const restored=[...nav.querySelectorAll('[role=treeitem]')].find(n=>n.dataset.key===focusKey);restored?.focus();}
 }
 function properties(parent,rows){const table=document.createElement('table');table.className='properties';for(const [key,value]of rows){const tr=document.createElement('tr');for(const v of [key,value??'Not reported']){const td=document.createElement('td');td.textContent=String(v);tr.append(td);}table.append(tr);}parent.append(table);}
-function renderTasks(){const box=$('task-list');box.replaceChildren();for(const h of hosts){if(!h.operation)continue;const row=document.createElement('details');const summary=document.createElement('summary');summary.textContent=h.id+' · '+h.operation.state+' · '+h.operation.message;const pre=document.createElement('pre');pre.textContent=h.operation.output||h.operation.message;row.append(summary,pre);box.append(row);}}
+function renderTasks(){
+ const box=$('task-list'),seen=new Set();
+ for(const h of hosts){if(!h.operation)continue;seen.add(h.id);
+  let row=[...box.children].find(r=>r.dataset.host===h.id);
+  if(!row){row=document.createElement('details');row.dataset.host=h.id;row.append(document.createElement('summary'),document.createElement('pre'));box.append(row);}
+  row.querySelector('summary').textContent=h.id+' · '+h.target+' · '+h.operation.state+' · '+h.operation.message;
+  row.querySelector('pre').textContent=(h.operation.state==='error'?hostHelp(h.operation.message):'')+'\nSSH target: '+h.target+'\nADB address: '+h.endpoint_host+'\n'+(h.operation.output||h.operation.message);
+ }
+ for(const row of [...box.children])if(!seen.has(row.dataset.host))row.remove();
+}
 function renderObject(){
  const h=activeHost(),i=activeInstance();currentView=section==='Console'?'live':'catalog';
  for(const id of ['overview','catalog','catalog-detail','host-list','live-workspace'])$(id).hidden=true;
@@ -310,7 +319,7 @@ function renderObject(){
  if(selection.kind==='server'&&h){
   button(toolbar,'Scan instances',()=>hostAction({host:h.id,action:'scan'})).disabled=busy;
   button(toolbar,'Create instance…',()=>openFlow('create',{host:h.id})).disabled=busy||!h.inventory_known||h.operation?.state==='error';
-  button(toolbar,'Edit connection…',()=>{const at=h.target.indexOf('@');openFlow('server',{id:h.id,address:h.endpoint_host,user:at>=0?h.target.slice(0,at):'',port:h.port,editing:true});}).disabled=busy;
+  button(toolbar,'Edit connection…',()=>{const at=h.target.indexOf('@');openFlow('server',{id:h.id,address:at>=0?h.target.slice(at+1):h.endpoint_host,user:at>=0?h.target.slice(0,at):(/resolve hostname/i.test(h.operation?.message||'')?h.target:''),port:h.port,editing:true});}).disabled=busy;
   button(toolbar,'Remove connection…',async()=>{if(confirm('Remove saved connection '+h.id+'? Its Android instances and storage stay on the server.')){await hostAction({host:h.id,action:'remove'});navigate({kind:'root'});await refresh();}}).disabled=busy;
  }
  if(selection.kind==='instance'&&h&&i){
@@ -326,11 +335,12 @@ function renderObject(){
   button(toolbar,'Remove saved connection…',async()=>{if(confirm('Forget this connection? Attached USB devices remain discoverable.')){await action(selection.serial,'forget');navigate({kind:'controller'});await refresh();}});
  }
  const names=selection.kind==='server'?['Instances','Connection','Diagnostics','Console']:selection.kind==='instance'?['Summary','Configuration','Console']:selection.kind==='device'?['Summary','Console']:selection.kind==='controller'?['Summary','Console']:['Summary'];
- if(!names.includes(section))section=names[0];const tabs=$('object-tabs');tabs.replaceChildren();for(const name of names){const b=button(tabs,name,()=>{section=name;renderObject();});b.className=name===section?'active':'';b.setAttribute('aria-current',name===section?'page':'false');}
+ if(!names.includes(section))section=names[0];const tabs=$('object-tabs');tabs.replaceChildren();for(const name of names){const b=button(tabs,name,async()=>{section=name;renderObject();if(name==='Console'&&selection.kind==='instance'&&i?.state==='running')await openConsole(instanceSerial());else if(name==='Console'&&selection.kind==='device')await openConsole(selection.serial);});b.className=name===section?'active':'';b.setAttribute('aria-current',name===section?'page':'false');}
  if(section==='Console'){
-  const candidates=selection.kind==='instance'?[{serial:instanceSerial(),name:labelFor(selection),state:i?.state==='running'?'device':'stopped'}]:devices.filter(belongs);
-  for(const d of candidates){button(toolbar,'Open '+d.name,()=>openConsole(d.serial)).disabled=d.state==='stopped';}
-  $('live-workspace').hidden=false;filterTiles();$('empty').hidden=[...tiles.values()].some(t=>!t.el.hidden);return;}
+  const candidates=selection.kind==='instance'?(i?[{serial:instanceSerial(),name:labelFor(selection),state:i.state}]:[]):selection.kind==='server'?(h?.instances||[]).map(i=>({serial:h.endpoint_host+':'+i.remote_adb_port,name:i.id+' · '+i.name,state:i.state})):devices.filter(belongs);
+  for(const d of candidates){button(toolbar,'Open '+d.name,()=>openConsole(d.serial)).disabled=['stopped','failed','starting','stopping','booting'].includes(d.state);}
+  $('live-workspace').hidden=false;filterTiles();$('empty').hidden=[...tiles.values()].some(t=>!t.el.hidden);
+  $('empty').querySelector('p').textContent=selection.kind==='instance'&&i?.state!=='running'?'Android is '+(i?.state||'unavailable')+'. Use Start above, wait for completion, then open this console. Storage and identity are preserved.':!candidates.length?'No devices available for this object. Scan its inventory or add a connection.':'Choose an Open button above. Only devices belonging to this object are shown.';return;}
  if(selection.kind==='server'&&h){if(section==='Instances'){$('catalog').hidden=false;renderCatalog();}else{$('host-list').hidden=false;for(const card of $('host-list').children){card.hidden=card.dataset.host!==h.id;const reports=card.querySelectorAll('details');for(const report of reports){const diagnostics=report.querySelector('summary')?.textContent==='Diagnostics and configuration';report.hidden=diagnostics?section!=='Diagnostics':section==='Diagnostics';report.open=true;}for(const controls of card.querySelectorAll(':scope > .controls'))controls.hidden=true;}}return;}
  const box=$('overview');box.hidden=false;box.replaceChildren();
  if(selection.kind==='instance'){
@@ -344,7 +354,7 @@ function renderObject(){
  const table=document.createElement('table');const head=document.createElement('tr');for(const text of ['Device','Connection','State','Actions']){const th=document.createElement('th');th.textContent=text;head.append(th);}table.append(head);
  for(const d of devices.filter(d=>!d.managed)){const row=document.createElement('tr');const name=document.createElement('td');button(name,d.name,()=>navigate({kind:'device',serial:d.serial}));row.append(name);for(const value of [d.serial,d.state]){const cell=document.createElement('td');cell.textContent=value;row.append(cell);}const actions=document.createElement('td');button(actions,'Open',()=>{navigate({kind:'device',serial:d.serial});return openConsole(d.serial);});row.append(actions);table.append(row);}box.append(table);
 }
-async function openConsole(serial){opened.add(serial);await action(serial,'connect');await refresh();section='Console';renderObject();}
+async function openConsole(serial){const owner=JSON.stringify(selection);opened.add(serial);await action(serial,'connect');await refresh();if(JSON.stringify(selection)===owner){section='Console';renderObject();}}
 function renderCatalog(){
  const h=activeHost();if(!h)return;const rows=$('catalog-rows');rows.replaceChildren();
  $('catalog-summary').textContent=h.inventory_known?h.instances.length+' instances · '+h.instances.filter(i=>i.state==='running').length+' running · '+h.instances.filter(i=>i.state==='stopped').length+' stopped':'Inventory unknown';

@@ -18,6 +18,20 @@ class HostTests(unittest.TestCase):
         self.hosts.save({"id": "lab", "target": "user@lab", "endpoint_host": "lab"})
         self.hosts.inventory["lab"] = [{"id": "01"}]
 
+    def test_structured_ssh_fields_keep_username_and_hostname_separate(self):
+        self.hosts.save({"id": "databrick", "ssh_user": "darkmatter2222",
+                         "ssh_host": "192.168.86.48", "endpoint_host": "192.168.86.48"})
+        self.assertEqual(self.hosts.profiles["databrick"]["target"],
+                         "darkmatter2222@192.168.86.48")
+        with patch("androidctl.web_hosts.subprocess.run",
+                   return_value=SimpleNamespace(returncode=0, stdout="OK", stderr="")) as run:
+            self.hosts.command(self.hosts.profiles["databrick"], ["inventory", "--json"])
+        self.assertEqual(run.call_args.args[0][-2], "darkmatter2222@192.168.86.48")
+        for user in ("", "user@host", "user;id", None):
+            with self.assertRaises(ValueError):
+                self.hosts.save({"id": "bad", "ssh_user": user,
+                                 "ssh_host": "databrick", "endpoint_host": "databrick"})
+
     def test_remove_connection_never_runs_remote_command(self):
         with patch.object(self.hosts, "command") as command:
             self.hosts.action({"host": "lab", "action": "remove"})

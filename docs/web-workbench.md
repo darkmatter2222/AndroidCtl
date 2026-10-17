@@ -230,3 +230,22 @@ catalog pagination, selective previews, volume/power requests, deletion, creatio
 exports, and failed-SSH inventory retention. Live Windows/SSH/emulator/GPU behavior
 requires verification on the actual host. No browser video streaming, automatic
 AVD import/recovery, cloning, snapshot restore, or automatic SSH provisioning.
+
+## Connection troubleshooting
+
+The tree label is a display identifier, not an SSH destination. The server form
+sends separate SSH username and hostname fields; the backend constructs user@host.
+For Databrick, use hostname 192.168.86.48 (or resolvable databrick), username
+darkmatter2222, and SSH port 22. Review the actual target before saving.
+Existing malformed profiles are not silently rewritten. Edit or remove the old
+profile separately; removing it does not delete server instances.
+
+An error containing sudo: a password is required means SSH already connected.
+Instance changes require administrator-configured noninteractive sudo access for
+AndroidCtl on the Linux host. The browser cannot respond to a sudo password prompt.
+Operation details display the saved SSH target so errors from different profiles
+can be distinguished. Polling preserves expanded operation rows and view options.
+
+An individual running instance or device connects when its Console tab is selected.
+Stopped-instance consoles explain that Android must first be started. Server console
+Open buttons are built from server inventory, even before ADB discovery catches up.
