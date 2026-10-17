@@ -18,6 +18,14 @@ class HostTests(unittest.TestCase):
         self.hosts.save({"id": "lab", "target": "user@lab", "endpoint_host": "lab"})
         self.hosts.inventory["lab"] = [{"id": "01"}]
 
+    def test_access_check_uses_privileged_gateway(self):
+        with patch("androidctl.web_hosts.threading.Thread") as thread:
+            self.hosts.action({"host": "lab", "action": "access-check"})
+        self.assertEqual(thread.call_args.kwargs["args"][-1], ["check"])
+        with patch.object(self.hosts, "command", side_effect=["access OK", '[{"id":"01"}]']) as command:
+            self.hosts.worker("lab", self.hosts.profiles["lab"], "access-check", ["check"])
+        self.assertTrue(command.call_args_list[0].kwargs["mutate"])
+
     def test_structured_ssh_fields_keep_username_and_hostname_separate(self):
         self.hosts.save({"id": "databrick", "ssh_user": "darkmatter2222",
                          "ssh_host": "192.168.86.48", "endpoint_host": "192.168.86.48"})
@@ -89,7 +97,7 @@ class HostTests(unittest.TestCase):
         argv = run.call_args.args[0]
         self.assertIn("BatchMode=yes", argv)
         self.assertIn("StrictHostKeyChecking=yes", argv)
-        self.assertEqual(argv[-1], "sudo -n androidctl start 01")
+        self.assertEqual(argv[-1], "sudo -n /usr/local/sbin/androidctl-remote start 01")
         self.assertNotIn("shell", run.call_args.kwargs)
 
     def test_scan_stopped_instances_and_command_errors(self):

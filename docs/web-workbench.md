@@ -249,3 +249,5 @@ can be distinguished. Polling preserves expanded operation rows and view options
 An individual running instance or device connects when its Console tab is selected.
 Stopped-instance consoles explain that Android must first be started. Server console
 Open buttons are built from server inventory, even before ADB discovery catches up.
+
+For install, verification and revocation, see [remote access setup](remote-access.md). Updated controllers use the restricted androidctl-remote gateway for privileged operations.

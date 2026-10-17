@@ -137,7 +137,8 @@ function hostHelp(message){
  if(/resolve hostname/i.test(message))return 'Check the server IP and username using Edit connection. The SSH target must include both.';
  if(/Permission denied|publickey/i.test(message))return 'SSH login failed. Configure key-based login from this computer to the server.';
  if(/Host key verification/i.test(message))return 'Open a terminal and connect with SSH once to verify and trust this server.';
- if(/sudo.*password|password.*required/i.test(message))return 'SSH connected successfully. Start/stop/create failed because sudo requires a password. Configure noninteractive sudo for AndroidCtl on this server; changing the hostname will not fix this.';
+ if(/sudo.*password|password.*required/i.test(message))return 'SSH connected successfully. Run the documented setup-remote-access.py --user LOGIN once with sudo on this server, then use Test management access in Diagnostics.';
+ if(/androidctl-remote/.test(message))return 'Install management access on the server: sudo python3 scripts/setup-remote-access.py --user YOUR_SSH_LOGIN. See docs/remote-access.md.';
  if(/command not found|not recognized|No such file/i.test(message))return 'AndroidCtl or SSH is missing from the command path. See the exact command error below.';
  if(/Connection refused/i.test(message))return 'The SSH port refused the connection. Check the SSH service and port.';
  if(/timed out|TimeoutExpired/i.test(message))return 'The server request timed out. Check SSH connectivity; last known instances remain visible.';
@@ -167,7 +168,7 @@ async function refreshHosts(){
   button(reports,'Save concurrency limit',()=>{if(!limit.reportValidity())return;return hostAction({host:h.id,action:'capacity',maximum:Number(limit.value)});}).disabled=op?.state==='running'||h.instances.some(i=>!['stopped','failed'].includes(i.state));
 
 
-  for(const [label,act]of [['Performance report','diagnostics'],['System check','doctor'],['GPU devices','gpu-list'],['Port map','ports'],['Hardware profiles','profiles'],['SDK status','sdk-status'],['SDK images','sdk-images'],['Server configuration','config']])button(reports,label,()=>hostAction({host:h.id,action:act})).disabled=op?.state==='running';
+  for(const [label,act]of [['Test management access','access-check'],['Performance report','diagnostics'],['System check','doctor'],['GPU devices','gpu-list'],['Port map','ports'],['Hardware profiles','profiles'],['SDK status','sdk-status'],['SDK images','sdk-images'],['Server configuration','config']])button(reports,label,()=>hostAction({host:h.id,action:act})).disabled=op?.state==='running';
   button(controls,'Edit connection',()=>{const at=h.target.indexOf('@');openFlow('server',{id:h.id,address:at>=0?h.target.slice(at+1):h.endpoint_host,user:at>=0?h.target.slice(0,at):(/resolve hostname/i.test(h.operation?.message||'')?h.target:''),port:h.port,editing:true});}).disabled=op?.state==='running';
   button(controls,'Create a new instance…',()=>openFlow('create',{host:h.id})).disabled=op?.state==='running'||!h.inventory_known||op?.state==='error';
   box.append(card);
@@ -320,6 +321,12 @@ function renderObject(){
   button(toolbar,'Scan instances',()=>hostAction({host:h.id,action:'scan'})).disabled=busy;
   button(toolbar,'Create instance…',()=>openFlow('create',{host:h.id})).disabled=busy||!h.inventory_known||h.operation?.state==='error';
   button(toolbar,'Edit connection…',()=>{const at=h.target.indexOf('@');openFlow('server',{id:h.id,address:at>=0?h.target.slice(at+1):h.endpoint_host,user:at>=0?h.target.slice(0,at):(/resolve hostname/i.test(h.operation?.message||'')?h.target:''),port:h.port,editing:true});}).disabled=busy;
+  button(toolbar,'Management access setup',()=>{
+   $('info').querySelector('h2').textContent='Authorize remote management';
+   const user=h.target.includes('@')?h.target.split('@')[0]:'YOUR_SSH_LOGIN';
+   $('details').textContent='SSH target: '+h.target+'\n\nOne-time setup on the Linux server, from its AndroidCtl checkout:\ngit pull --ff-only\nsudo python3 scripts/setup-remote-access.py --user '+user+'\n\nVerify from this controller:\nssh -p '+h.port+' '+h.target+' sudo -n /usr/local/sbin/androidctl-remote check\n\nThen use Diagnostics → Test management access.\n\nThis authorizes management of all AndroidCtl instances, including deletion. It grants no general shell or arbitrary configuration access.\nSee docs/remote-access.md for SSH keys, fresh installation and revocation.';
+   $('info').showModal();
+  });
   button(toolbar,'Remove connection…',async()=>{if(confirm('Remove saved connection '+h.id+'? Its Android instances and storage stay on the server.')){await hostAction({host:h.id,action:'remove'});navigate({kind:'root'});await refresh();}}).disabled=busy;
  }
  if(selection.kind==='instance'&&h&&i){

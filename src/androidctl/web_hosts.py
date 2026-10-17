@@ -70,7 +70,8 @@ class Hosts:
         return {"message": "Host saved; scan instances to discover running and stopped devices"}
 
     def command(self, host, args, mutate=False):
-        command = (["sudo", "-n"] if mutate else []) + ["androidctl", *args]
+        command = (["sudo", "-n", "/usr/local/sbin/androidctl-remote", *args]
+                   if mutate else ["androidctl", *args])
         if host["target"] != "local":
             command = [
                 "ssh",
@@ -165,6 +166,7 @@ class Hosts:
             reports = {
                 "diagnostics": ["performance", "--json"],
                 "doctor": ["doctor", "--json"],
+                "access-check": ["check"],
                 "profiles": ["profiles", "--json"],
                 "ports": ["ports", "--json"],
                 "gpu-list": ["gpu", "list", "--json"],

@@ -49,6 +49,9 @@ def copy_application(cfg, account):
     staging.rename(current)
     shutil.copy2(REPO / "libexec/androidctl", "/usr/local/bin/androidctl")
     os.chmod("/usr/local/bin/androidctl", 0o755)
+    gateway = Path("/usr/local/sbin/androidctl-remote")
+    if gateway.exists():
+        atomic_write(gateway, (REPO / "libexec/androidctl-remote").read_text(), mode=0o755)
     values = {
         "SERVICE_USER": cfg.service_user,
         "SERVICE_GROUP": grp.getgrgid(account.pw_gid).gr_name,
@@ -197,6 +200,9 @@ def install(args, upgrade=False):
             sdk.licenses(args.accept_licenses)
             sdk.install(["emulator", "platform-tools"])
         copy_application(cfg, account)
+        if getattr(args, "remote_user", None):
+            run([sys.executable, str(REPO / "scripts/setup-remote-access.py"),
+                 "--user", args.remote_user])
         # Apply any managed ADB port/identity changes while no emulators run.
         run(["systemctl", "stop", "android-adb.service"], check=False)
     print("Installed. AVD data and instance configuration preserved. No devices enabled automatically.")
@@ -234,6 +240,9 @@ def uninstall(args):
         ):
             (Path("/etc/systemd/system") / name).unlink(missing_ok=True)
         Path("/usr/local/bin/androidctl").unlink(missing_ok=True)
+        Path("/usr/local/sbin/androidctl-remote").unlink(missing_ok=True)
+        for rule in Path("/etc/sudoers.d").glob("androidctl-remote-*"):
+            rule.unlink()
         shutil.rmtree("/usr/local/lib/androidctl", ignore_errors=True)
         Path("/etc/tmpfiles.d/androidctl.conf").unlink(missing_ok=True)
         if args.purge:
@@ -252,6 +261,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("mode", choices=("install", "upgrade", "uninstall"))
     parser.add_argument("--user")
+    parser.add_argument("--remote-user", help="Authorize this SSH login for restricted web management")
     parser.add_argument("--accept-licenses", action="store_true")
     parser.add_argument("--purge", action="store_true")
     parser.add_argument("--yes", action="store_true")

@@ -473,3 +473,5 @@ a stable public ADB endpoint and persistent AVD. Legacy fixed-port instances rem
 unchanged. See [catalog, setup and limits](docs/web-workbench.md) and
 [runtime port allocation](docs/ports.md). Upgrade the Linux host as well as the
 controller checkout before reserving new instances.
+
+Remote application setup: [SSH keys and restricted management access](docs/remote-access.md).
