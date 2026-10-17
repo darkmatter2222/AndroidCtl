@@ -17,6 +17,8 @@ def parser():
     p.add_argument("--config", default="/etc/androidctl/androidctl.conf")
     sub = p.add_subparsers(dest="command")
     sub.add_parser("version")
+    web = sub.add_parser("web", help="Start local browser device workbench")
+    web.add_argument("args", nargs=argparse.REMAINDER)
     f = sub.add_parser("fleet").add_subparsers(dest="action", required=True)
     setup = f.add_parser("setup")
     setup.add_argument("--api", type=int, default=35)
@@ -98,6 +100,11 @@ def output(value, as_json=False):
 
 
 def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] == "web":
+        from .web import main as web_main
+
+        return web_main(argv[1:])
     p = parser()
     args = p.parse_args(argv)
     if not args.command:
