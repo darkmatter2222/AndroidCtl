@@ -78,7 +78,6 @@ def environment(instance):
     if dev["driver"] == "nvidia":
         env = {
             "__GLX_VENDOR_LIBRARY_NAME": "nvidia",
-            "__NV_PRIME_RENDER_OFFLOAD": "1",
             "__VK_LAYER_NV_optimus": "NVIDIA_only",
         }
         vendor = Path("/usr/share/glvnd/egl_vendor.d/10_nvidia.json")

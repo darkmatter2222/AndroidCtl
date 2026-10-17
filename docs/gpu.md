@@ -59,3 +59,20 @@ sudo androidctl start 01
 The read-only performance report includes load, CPU pressure, memory, emulator configuration, KVM acceleration check, GPU inventory, NVIDIA utilization/VRAM/processes and highest-CPU processes. Inspect these before stopping any GPU model workload. Stop only the identified model service/container using its normal supervisor; do not blanket-kill GPU processes. This release does not unload models automatically. Compare the same app action with one instance, native scrcpy, no browser previews, then with browser previews enabled and at 50% logical resolution. That separates guest/rendering latency from screenshot latency. No live RTX 3090 performance gain has been measured in the development environment.
 
 Sources: [official Android acceleration guide](https://developer.android.com/studio/run/emulator-acceleration), [NVIDIA PRIME render offload](https://download.nvidia.com/XFree86/Linux-x86_64/550.54.14/README/primerenderoffload.html).
+
+
+## Confirmed headless GLX failure on the RTX 3090
+
+The host log on 2026-10-17 shows `GlxEnginegetDefaultDisplay: Failed to open display 0. DISPLAY: [(null)]`, followed by framebuffer initialization failure. GPU device access alone is insufficient for this emulator's `host` GLX path. The later timeout and forced termination are consequences of renderer failure, not evidence of insufficient GPU memory.
+
+After updating the checkout and installed manager, select host rendering for a stopped instance, then run:
+
+```sh
+sudo bash scripts/setup-nvidia-display.sh 01
+```
+
+This installs Xorg/xauth/glxinfo if absent (no NVIDIA driver replacement), creates a dedicated NVIDIA-backed headless X display `:99`, authenticates it with a service-group-readable cookie, disables TCP listening, and verifies that `glxinfo -B` under the Android service identity reports NVIDIA before starting Android. It uses the selected GPU's PCI identity and requires its existing NVIDIA Xorg module. It refuses an occupied `:99`; it does not stop your desktop X server. The per-instance drop-in supplies DISPLAY/XAUTHORITY and disables PrivateTmp for that instance so the X socket is visible. Other unit restrictions remain. The Xorg unit starts as a dependency; no global desktop config is overwritten. This setup has syntax/unit-level validation only, not live hardware validation.
+
+The launcher no longer forces PRIME render offload; the dedicated X screen already belongs to NVIDIA. Confirm the actual emulator renderer in its journal and measure app responsiveness after boot.
+
+To remove the integration from instance 01, stop it, remove only `/etc/systemd/system/android-emulator@01.service.d/nvidia-display.conf`, run `sudo systemctl daemon-reload`, then select `--gpu swangle` and start it. Stop `androidctl-nvidia-xorg.service` only after no other instances use its display. Keep its configuration/cookie for repeat setup, or remove them after stopping the display if no longer needed.
