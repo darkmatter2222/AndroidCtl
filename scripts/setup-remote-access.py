@@ -7,6 +7,9 @@ import pwd
 import re
 import subprocess
 import tempfile
+import sys
+
+from install_permissions import secure_tree
 
 REPO = Path(__file__).resolve().parents[1]
 GATEWAY = Path('/usr/local/sbin/androidctl-remote')
@@ -20,7 +23,7 @@ def trusted(path):
             raise ValueError(f'Root-owned, non-writable installation required: {entry}')
 
 
-def provision(user, remove=False):
+def provision(user, remove=False, repair=False):
     if os.geteuid() != 0:
         raise ValueError('Run with sudo once to authorize this login')
     if not re.fullmatch(r'[a-z_][a-z0-9_-]*', user):
@@ -35,6 +38,9 @@ def provision(user, remove=False):
         print('Revoked AndroidCtl remote access for ' + user)
         return
     for path in (Path('/usr/local/bin/androidctl'), Path('/usr/local/lib/androidctl')):
+        if repair:
+            trusted(path.parent)
+            secure_tree(path)
         trusted(path)
         if path.is_dir():
             for child in path.rglob('*'):
@@ -67,8 +73,18 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--user', required=True)
     parser.add_argument('--remove', action='store_true')
+    parser.add_argument('--repair-permissions', action='store_true',
+                        help='Normalize installed application ownership/modes; preserve Android data')
     args = parser.parse_args()
-    provision(args.user, args.remove)
+    if args.remove and args.repair_permissions:
+        parser.error('--remove and --repair-permissions cannot be combined')
+    try:
+        provision(args.user, args.remove, args.repair_permissions)
+    except (ValueError, OSError, KeyError, subprocess.CalledProcessError) as exc:
+        print('ERROR: ' + str(exc), file=sys.stderr)
+        if not args.remove:
+            print('For an existing regular-file installation, retry with --repair-permissions.', file=sys.stderr)
+        raise SystemExit(1) from None
 
 
 if __name__ == '__main__':

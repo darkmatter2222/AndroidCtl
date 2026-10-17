@@ -23,6 +23,9 @@ from androidctl.errors import Error  # noqa: E402
 from androidctl.sdk import SDK  # noqa: E402
 from androidctl.util import atomic_write, lock, require_root, run  # noqa: E402
 
+sys.path.insert(0, str(REPO / "scripts"))
+from install_permissions import secure_tree  # noqa: E402
+
 CONFIG = Path("/etc/androidctl/androidctl.conf")
 
 
@@ -49,6 +52,8 @@ def copy_application(cfg, account):
     staging.rename(current)
     shutil.copy2(REPO / "libexec/androidctl", "/usr/local/bin/androidctl")
     os.chmod("/usr/local/bin/androidctl", 0o755)
+    secure_tree(destination)
+    secure_tree(Path("/usr/local/bin/androidctl"))
     gateway = Path("/usr/local/sbin/androidctl-remote")
     if gateway.exists():
         atomic_write(gateway, (REPO / "libexec/androidctl-remote").read_text(), mode=0o755)

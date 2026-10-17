@@ -12,7 +12,7 @@ Your screenshot confirms SSH login already works. On Databrick, run once:
 ```bash
 cd /home/darkmatter2222/virtual_android
 git pull --ff-only
-sudo python3 scripts/setup-remote-access.py --user darkmatter2222
+sudo python3 scripts/setup-remote-access.py --user darkmatter2222 --repair-permissions
 sudo -n /usr/local/sbin/androidctl-remote check
 ```
 
@@ -92,3 +92,9 @@ sudo -n /usr/local/sbin/androidctl-remote check  # should fail absent other sudo
 
 If another sudo rule already grants broader privileges, remove/review that rule
 separately. The provisioner never edits unrelated rules or existing authorized_keys.
+
+The repair option normalizes only /usr/local/lib/androidctl and the installed
+/usr/local/bin/androidctl launcher to root ownership and non-group-writable modes.
+It refuses symlinks and special files, and never changes AVD data, configuration,
+the SDK, or the source checkout. The installer now normalizes copied code modes
+instead of preserving group-write permissions from the source checkout.
