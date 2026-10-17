@@ -35,7 +35,7 @@ function point(e){const r=img.getBoundingClientRect();return [Math.max(0,Math.mi
 img.onpointerdown=e=>{if(!t.armed||!img.naturalWidth||t.device.state!=='device')return;start=point(e);img.setPointerCapture(e.pointerId);};img.onpointercancel=()=>start=null;img.onpointerup=async e=>{if(!start)return;const first=start;start=null;const end=point(e);try{await action(device.serial,Math.hypot(end[0]-first[0],end[1]-first[1])<15?'tap':'swipe',{points:Math.hypot(end[0]-first[0],end[1]-first[1])<15?first:[...first,...end]});}catch(err){notice(err.message,true);}};
 $('grid').append(el);return t;}
 function stopPreview(t,message){t.epoch++;const img=t.el.querySelector('img');img.removeAttribute('src');if(t.url){URL.revokeObjectURL(t.url);t.url=null;}t.el.querySelector('.screen span').textContent=message;t.el.querySelector('.stats').textContent=message;}
-async function refresh(){const result=await(await api('/api/devices')).json();const seen=new Set();for(const d of result.devices){seen.add(d.serial);let t=tiles.get(d.serial);if(!t){t=createTile(d);tiles.set(d.serial,t);}t.device=d;managedControls(t);if(d.state==='device'&&!t.displayLoaded){t.displayLoaded=true;t.loadDisplay().catch(e=>{t.displayLoaded=false;notice(e.message,true);});}for(const b of t.el.querySelectorAll('button')){if(['Open live view','Inspect','Apply now','Restart','Read resolutions'].includes(b.textContent))b.disabled=d.state!=='device';}if(d.state!=='device')stopPreview(t,d.state==='disconnected'?'Disconnected — previews stopped':d.state);const operation=t.el.querySelector('.operation');operation.textContent=d.operation?d.operation.message:'';t.el.querySelector('.identity').textContent=d.name;t.el.querySelector('.state').textContent=d.state;t.el.querySelector('.state').classList.toggle('online',d.state==='device');t.el.querySelector('.meta').textContent=d.serial+' · '+(d.details||'saved endpoint');}for(const [s,t] of tiles){if(!seen.has(s)){t.el.remove();if(t.url)URL.revokeObjectURL(t.url);tiles.delete(s);}}for(const s of order){if(tiles.has(s))$('grid').append(tiles.get(s).el);}$('count').textContent=result.devices.filter(d=>d.state==='device').length+' online / '+result.devices.length+' devices';$('empty').hidden=tiles.size>0;}
+async function refresh(){const result=await(await api('/api/devices')).json();const seen=new Set();for(const d of result.devices){seen.add(d.serial);let t=tiles.get(d.serial);if(!t){t=createTile(d);tiles.set(d.serial,t);}t.device=d;managedControls(t);if(d.state==='device'&&!t.displayLoaded){t.displayLoaded=true;t.loadDisplay().catch(e=>{t.displayLoaded=false;notice(e.message,true);});}for(const b of t.el.querySelectorAll('button')){if(['Open live view','Inspect','Apply now','Restart','Read resolutions'].includes(b.textContent))b.disabled=d.state!=='device';}if(d.state!=='device')stopPreview(t,d.state==='disconnected'?'Disconnected — previews stopped':d.state);const operation=t.el.querySelector('.operation');operation.textContent=d.operation?d.operation.message:'';t.el.querySelector('.identity').textContent=d.name;t.el.querySelector('.state').textContent=d.state;t.el.querySelector('.state').classList.toggle('online',d.state==='device');t.el.querySelector('.meta').textContent=d.serial+' · '+(d.details||'saved endpoint');}for(const [s,t] of tiles){if(!seen.has(s)){t.el.remove();if(t.url)URL.revokeObjectURL(t.url);tiles.delete(s);}}for(const s of order){if(tiles.has(s))$('grid').append(tiles.get(s).el);}$('count').textContent=result.devices.filter(d=>d.state==='device').length+' online / '+result.devices.length+' devices';$('empty').hidden=tiles.size>0;filterTiles();}
 async function frame(t){if(t.busy||paused||t.previewPaused||document.hidden||t.device.state!=='device')return;t.busy=true;const epoch=t.epoch;const start=performance.now();try{const blob=await(await api('/api/frame?serial='+encodeURIComponent(t.device.serial))).blob();if(!t.el.isConnected||t.epoch!==epoch||t.device.state!=='device')return;const url=URL.createObjectURL(blob);const img=t.el.querySelector('img');img.src=url;if(t.url)URL.revokeObjectURL(t.url);t.url=url;t.el.querySelector('.screen span').textContent='';t.el.querySelector('.stats').textContent=`${new Date().toLocaleTimeString()} · ${Math.round(performance.now()-start)} ms · ${Math.round(blob.size/1024)} KiB`;}catch(e){if(t.epoch===epoch)t.el.querySelector('.stats').textContent='Preview error: '+e.message;}finally{t.busy=false;}}
 $('refresh').onclick=safely(refresh);$('pause').onclick=()=>{paused=!paused;$('pause').textContent=paused?'Resume previews':'Pause previews';};$('width').oninput=()=>document.documentElement.style.setProperty('--tile',$('width').value+'px');$('close').onclick=()=>$('info').close();
 async function loop(){const pending=[...tiles.values()];async function worker(){while(pending.length)await frame(pending.shift());}await Promise.all([worker(),worker()]);setTimeout(loop,Number($('rate').value));}safely(refresh)();loop();setInterval(()=>{if(!document.hidden)safely(refresh)();},10000);
@@ -47,7 +47,12 @@ button(box,'Stop instance',async()=>{if(confirm('Stop Android instance '+m.id+' 
 const more=document.createElement('details');more.innerHTML='<summary>Instance settings</summary>';box.append(more);
 const renderer=document.createElement('select');renderer.setAttribute('aria-label','Renderer');renderer.add(new Option('Host GPU (single NVIDIA or single Mesa)','host'));renderer.add(new Option('Software SwANGLE (rollback)','swangle'));more.append(renderer);
 button(more,'Set renderer (stopped)',()=>hostAction({host:m.host,instance:m.id,action:'renderer',gpu:renderer.value}));
-button(more,'Delete instance',async()=>{const typed=prompt('Delete instance '+m.id+'? Type DELETE '+m.id+' to confirm.');if(typed!=='DELETE '+m.id)return;const erase=confirm('Also permanently erase its Android userdata? OK = erase; Cancel = preserve data.');await hostAction({host:m.host,instance:m.id,action:'delete',confirm:typed,erase_data:erase});});}
+button(box,'Delete…',()=>instanceDialog(t,'delete'));
+button(more,'Default resolution…',()=>instanceDialog(t,'display'));
+button(more,m.autostart?'Disable autostart':'Start on server boot',()=>hostAction({host:m.host,instance:m.id,action:m.autostart?'disable':'enable'}));
+button(more,'Restart instance',async()=>{if(confirm('Restart Android instance '+m.id+'? Running apps will be interrupted.'))await hostAction({host:m.host,instance:m.id,action:'restart'});});
+for(const [label,act]of [['Recent logs','logs'],['Instance info','info'],['Health check','health']])button(more,label,async()=>{await hostAction({host:m.host,instance:m.id,action:act});$('servers').showModal();});
+}
 let hosts=[],flow=null,hostSnapshot="";
 function field(label,key,value='',type='text',hint=''){
  const wrap=document.createElement('label');wrap.textContent=label;
@@ -71,7 +76,7 @@ function renderFlow(){
  $('wizard-description').textContent=({device:'Choose how this device connects. We will build the address for you.',server:'Enter the Linux server running AndroidCtl. Use your normal SSH username.',create:'Create an instance on a configured server. It will appear as a tile when the server inventory refreshes.'})[kind];
  if(step===1){
   const review=document.createElement('dl');
-  const rows=kind==='device'?(d.method==='usb'?[['Connection','USB · scan attached devices']]:[['Address',endpoint(d)],['Name',d.name||endpoint(d)],['Action',d.method==='pair'?'Pair, then connect using debugging port':'Connect over ADB']]):kind==='server'?[['Server name',d.id],['SSH connection',d.user+'@'+d.address],['SSH port',d.port],['Device address',d.address]]:[['Server',d.host],['Instance',d.instance],['Configuration',d.ram+' MiB RAM · '+d.cpus+' CPU cores'],['Android image','API '+d.api+' · '+d.profile]];
+  const rows=kind==='device'?(d.method==='usb'?[['Connection','USB · scan attached devices']]:[['Address',endpoint(d)],['Name',d.name||endpoint(d)],['Action',d.method==='pair'?'Pair, then connect using debugging port':'Connect over ADB']]):kind==='server'?[['Server name',d.id],['SSH connection',d.user+'@'+d.address],['SSH port',d.port],['Device address',d.address]]:[['Server',d.host],['Instance',d.instance],['Configuration',d.ram+' MiB RAM · '+d.cpus+' CPU cores'],['Default resolution',d.display_scale+'% of native size'],['Android image','API '+d.api+' · '+d.profile]];
   for(const [k,v]of rows){const dt=document.createElement('dt');dt.textContent=k;const dd=document.createElement('dd');dd.textContent=v;review.append(dt,dd);}fields.append(review);
   const note=document.createElement('p');note.className='muted';note.textContent=kind==='server'?'Testing uses your existing SSH key and trusted host entry. Start/stop/create also require passwordless sudo for AndroidCtl.':kind==='create'?'Uses an already installed Android SDK image. Creation can take several minutes; track progress in Servers.':'The connection is saved so its tile remains available when disconnected.';fields.append(note);return;
  }
@@ -93,6 +98,7 @@ function renderFlow(){
   selectField('Android server','host',hosts.map(h=>[h.id,h.id+' · '+h.endpoint_host]),d.host);
   field('Instance number (01–64)','instance',d.instance||'','number','Choose an unused number; scan the server first.').max=64;
   selectField('Resources','preset',[['4096','Balanced · 4 GB RAM / 4 cores'],['2048','Lightweight · 2 GB RAM / 2 cores'],['8192','Large · 8 GB RAM / 8 cores']],d.preset||'4096');
+  selectField('Default screen resolution','display_scale',[['25','25% · smallest'],['33','33% · compact'],['50','50% · recommended'],['75','75% · larger'],['100','100% · native']],d.display_scale||localStorage.getItem('androidctl-default-scale')||'50');
   const extra=document.createElement('details');extra.innerHTML='<summary>Advanced image settings</summary>';fields.append(extra);
   field('Hardware profile','profile',d.profile||'pixel_8_pro');extra.append(fields.lastElementChild);
   field('Android API level','api',d.api||'35','number');extra.append(fields.lastElementChild);
@@ -101,7 +107,7 @@ function renderFlow(){
 function endpoint(d,port=d.port){return d.address+':'+port;}
 $('wizard-form').onsubmit=async e=>{
  e.preventDefault();if(!flow)return;
- if(flow.step===0){flow.data={...flow.data,...Object.fromEntries(new FormData(e.target))};if(flow.kind==='create'){flow.data.ram=Number(flow.data.preset);flow.data.cpus=flow.data.ram/1024;}flow.step=1;renderFlow();return;}
+ if(flow.step===0){flow.data={...flow.data,...Object.fromEntries(new FormData(e.target))};if(flow.kind==='create'){flow.data.ram=Number(flow.data.preset);flow.data.cpus=flow.data.ram/1024;localStorage.setItem('androidctl-default-scale',flow.data.display_scale);}flow.step=1;renderFlow();return;}
  const {kind,data:d}=flow;$('wizard-next').disabled=true;$('wizard-back').disabled=true;$('wizard-close').disabled=true;$('wizard-error').textContent='Working…';
  try{
   if(kind==='device'){
@@ -112,7 +118,7 @@ $('wizard-form').onsubmit=async e=>{
   }else if(kind==='server'){
    await hostAction({action:'save',id:d.id,target:d.user+'@'+d.address,endpoint_host:d.address,port:Number(d.port)});
    await hostAction({action:'scan',host:d.id});
-  }else await hostAction({action:'create',host:d.host,instance:d.instance,ram:d.ram,cpus:d.cpus,api:Number(d.api),profile:d.profile});
+  }else await hostAction({action:'create',host:d.host,instance:d.instance,ram:d.ram,cpus:d.cpus,api:Number(d.api),profile:d.profile,display_scale:Number(d.display_scale)});
   $('wizard').close();if(kind!=='device'){$('servers').showModal();await refreshHosts();}
  }catch(err){$('wizard-error').textContent=err.message;}
  finally{$('wizard-next').disabled=false;$('wizard-back').disabled=false;$('wizard-close').disabled=false;}
@@ -144,10 +150,75 @@ async function refreshHosts(){
   state.textContent=op?(op.state==='error'?hostHelp(op.message):op.message):'Not tested. Scan to discover instances.';card.append(state);
   if(op){const details=document.createElement('details');const summary=document.createElement('summary');summary.textContent='Operation details';const pre=document.createElement('pre');pre.textContent=[op.message,op.output].filter(Boolean).join('\n');details.append(summary,pre);card.append(details);}
   const controls=document.createElement('div');controls.className='controls';card.append(controls);
-  for(const [label,act]of [['Scan instances','scan'],['Performance report','diagnostics']])button(controls,label,()=>hostAction({host:h.id,action:act})).disabled=op?.state==='running';
+  button(controls,'Scan instances',()=>hostAction({host:h.id,action:'scan'})).disabled=op?.state==='running';
+  const reports=document.createElement('details');reports.innerHTML='<summary>Diagnostics and configuration</summary>';card.append(reports);
+  for(const [label,act]of [['Performance report','diagnostics'],['System check','doctor'],['GPU devices','gpu-list'],['Port map','ports'],['Hardware profiles','profiles'],['SDK status','sdk-status'],['SDK images','sdk-images'],['Server configuration','config']])button(reports,label,()=>hostAction({host:h.id,action:act})).disabled=op?.state==='running';
   button(controls,'Edit connection',()=>{const at=h.target.indexOf('@');openFlow('server',{id:h.id,address:h.endpoint_host,user:at>=0?h.target.slice(0,at):'',port:h.port});}).disabled=op?.state==='running';
   button(controls,'Create Android',()=>openFlow('create',{host:h.id})).disabled=op?.state==='running';
   box.append(card);
  }
 }
 safely(refreshHosts)();setInterval(()=>{if(!document.hidden)safely(refreshHosts)();},3000);
+
+// Instance actions always use the managed host identity.
+let instanceTask=null;
+function instanceDialog(t,kind){
+ const m=t.device.managed;instanceTask={m,kind};
+ $('instance-title').textContent=kind==='delete'?'Delete virtual Android':'Default screen resolution';
+ $('instance-description').textContent=kind==='delete'
+ ?'This stops and removes instance '+m.id+' on '+m.host+'. Choose whether to retain its Android data.'
+ :'Saved on '+m.host+' for instance '+m.id+'. Applies now if running and again on service startup. Width, height and density scale together.';
+ const box=$('instance-fields');box.replaceChildren();
+ const label=document.createElement('label');const select=document.createElement('select');select.id='instance-choice';
+ if(kind==='delete'){
+  label.textContent='Android data';select.add(new Option('Keep data on server for manual recovery','keep'));select.add(new Option('Permanently erase apps, accounts and files','erase'));
+  label.append(select);box.append(label);
+  const typed=document.createElement('label');typed.textContent='Type DELETE '+m.id+' to confirm';const input=document.createElement('input');input.id='delete-confirm';input.required=true;input.autocomplete='off';typed.append(input);box.append(typed);
+ }else{
+  label.textContent='Resolution';for(const n of [25,33,50,75,100])select.add(new Option(n+'%'+(n===100?' · native':n===50?' · recommended':''),n));
+  select.value=String(m.display_scale||50);label.append(select);box.append(label);
+ }
+ $('instance-error').textContent='';$('instance-submit').textContent=kind==='delete'?'Delete instance':'Save default resolution';$('instance-dialog').showModal();
+}
+$('instance-close').onclick=()=>$('instance-dialog').close();
+$('instance-form').onsubmit=async e=>{
+ e.preventDefault();const {m,kind}=instanceTask;
+ const data={host:m.host,instance:m.id,action:kind};
+ if(kind==='delete'){data.confirm=$('delete-confirm').value;data.erase_data=$('instance-choice').value==='erase';if(data.confirm!=='DELETE '+m.id){$('instance-error').textContent='Enter DELETE '+m.id+' exactly.';return;}}
+ else data.display_scale=Number($('instance-choice').value);
+ $('instance-submit').disabled=true;
+ try{await hostAction(data);$('instance-dialog').close();$('servers').showModal();}
+ catch(err){$('instance-error').textContent=err.message;}
+ finally{$('instance-submit').disabled=false;}
+};
+function filterTiles(){const q=$('filter').value.trim().toLowerCase();for(const t of tiles.values())t.el.hidden=![t.device.name,t.device.serial,t.device.state,t.device.managed?.host].join(' ').toLowerCase().includes(q);}
+$('filter').oninput=filterTiles;
+function download(filename,content,type){
+ const url=URL.createObjectURL(new Blob([content],{type}));const a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+$('exports').onclick=()=>$('export-dialog').showModal();
+$('export-close').onclick=()=>$('export-dialog').close();
+$('export-connections').onclick=safely(async()=>{
+ await refreshHosts();await refresh();
+ const connections={format:'androidctl-workspace',version:1,hosts:hosts.map(({id,target,endpoint_host,port})=>({id,target,endpoint_host,port})),devices:[...tiles.values()].map(({device:d})=>({serial:d.serial,name:d.name})),preferences:{default_display_scale:Number(localStorage.getItem('androidctl-default-scale')||50)}};
+ download('androidctl-connections.json',JSON.stringify(connections,null,2),'application/json');notice('Connections exported');
+});
+function quote(value){return "'"+String(value).replaceAll("'","'\\''")+"'";}
+$('export-commands').onclick=safely(async()=>{
+ await refreshHosts();await refresh();
+ const lines=['#!/usr/bin/env bash','# AndroidCtl command reference — uncomment only the commands you want to run.','# Linux/macOS/Git Bash syntax. Run SSH commands from your controller.',''];
+ for(const h of hosts){
+  const remote=cmd=>h.target==='local'?cmd:'ssh -p '+Number(h.port)+' '+quote(h.target)+' '+quote(cmd);
+  lines.push('# Server '+h.id,'# '+remote('androidctl list --json'),'# '+remote('androidctl performance --json'));
+  for(const i of h.instances){
+   const id=String(i.id).padStart(2,'0');
+   for(const cmd of ['sudo androidctl start '+id,'sudo androidctl stop '+id,'sudo androidctl restart '+id,'sudo androidctl enable '+id,'sudo androidctl disable '+id,'sudo androidctl display '+id+' --scale '+(i.display_scale||50),'androidctl logs '+id+' --since 30m','androidctl info '+id+' --json'])lines.push('# '+remote(cmd));
+  }lines.push('');
+ }
+ for(const {device:d}of tiles.values()){
+  lines.push('# Device '+String(d.name).replace(/[\r\n]/g,' '));
+  if(d.serial.includes(':'))lines.push('# adb connect '+quote(d.serial));
+  lines.push('# scrcpy -s '+quote(d.serial)+' --no-audio --max-fps=30','# adb -s '+quote(d.serial)+' shell wm size','');
+ }
+ download('androidctl-commands.sh',lines.join('\n')+'\n','text/plain');notice('Command reference exported');
+});

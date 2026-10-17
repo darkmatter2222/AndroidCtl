@@ -122,3 +122,55 @@ The toolbar starts with tasks rather than connection configuration fields:
 
 Server setup reports a queued test, not a successful login. Consult the resulting
 server status before attempting lifecycle actions.
+
+## Persistent resolution, deletion, and exports
+
+Upgrade the Linux server installation as well as pulling the Windows checkout.
+The CLI now supports `sudo androidctl display 01 --scale 50` and creation with
+`sudo androidctl create 02 --display-scale 50`.
+
+Choose 25, 33, 50, 75, or 100 percent. Dimensions scale from the physical display;
+density scales proportionally (minimum 72 dpi). Existing instances retain their
+behavior until a policy is chosen. New web-created instances default to 50%; the
+browser remembers the last creation choice. Pixel 8 Pro at 50% is 672 × 1496,
+240 dpi. The policy is stored in instance configuration, applied immediately when
+running, and reapplied after each service boot. Guest reboots retain Android's
+wm overrides. 100% clears size and density overrides.
+
+Use **Instance settings → Default resolution** for existing managed instances.
+Device settings' Apply now remains a temporary override; the next service start
+restores the saved policy. If applying fails, the policy remains saved; inspect
+logs and retry.
+
+**Delete…** appears directly on managed tiles. It identifies the server/instance
+and requires typing DELETE followed by the instance ID. Keep data is the default:
+the instance is deregistered but its AVD files remain for manual recovery. Erase
+permanently removes apps, accounts, and userdata. A separately saved ADB connection
+may remain offline; Forget removes that connection. Physical phones only have
+Forget, not virtual-instance deletion.
+
+Instance settings also offer restart, enable/disable autostart, recent logs
+(30 minutes), health, and instance information. Servers offer performance, doctor,
+GPU inventory, ports, profiles, SDK status/images, and read-only configuration
+under Diagnostics and configuration.
+
+**Export** downloads connection JSON (host profiles, device addresses/names, and
+preferred creation scale) without session tokens, SSH keys, or operation logs.
+This is a manifest for agents/manual restoration; automatic import is not included.
+Command exports contain SSH-wrapped lifecycle/display/log commands and ADB/scrcpy
+commands for current inventory. They use Bash/Git Bash syntax and are commented
+out so executing the file does not trigger bulk changes. Search filters tiles by
+name, address, state, or server.
+
+Interactive shells, SDK installation/update/license acceptance, fleet setup, and
+arbitrary configuration edits remain CLI operations. The web API does not accept
+arbitrary shell commands.
+
+Additional host actions: restart, enable, disable, display (display_scale), logs,
+info, health; reports: doctor, gpu-list, ports, profiles, sdk-status, sdk-images,
+config. Create accepts display_scale. Existing authentication, SSH verification,
+per-host job exclusion, and deletion confirmation still apply.
+
+DOM regression checks: install jsdom in an external test directory and run
+`NODE_PATH=/path/to/node_modules node tests/workbench-ui.cjs`. Backend tests:
+`PYTHONPATH=src python -m unittest discover -s tests`.

@@ -67,6 +67,8 @@ class Workbench:
                     "gpu": instance["gpu_mode"],
                     "ram": instance["ram_mb"],
                     "cpus": instance["cpu_cores"],
+                    "display_scale": instance.get("display_scale", 0),
+                    "autostart": instance.get("autostart", False),
                 }
                 if instance["state"] in ("stopped", "failed"):
                     row["state"] = instance["state"]

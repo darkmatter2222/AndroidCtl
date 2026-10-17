@@ -81,6 +81,34 @@ class HostTests(unittest.TestCase):
             self.hosts.action({"host": "lab", "action": "renderer", "instance": "01", "gpu": "host"})
         self.assertEqual(thread.call_args.kwargs["args"][-1], ["renderer", "01", "--gpu", "host"])
 
+    def test_create_and_display_scale_commands(self):
+        for action, ident, flag in (("create", "02", "--display-scale"), ("display", "01", "--scale")):
+            self.hosts.jobs.clear()
+            with patch("androidctl.web_hosts.threading.Thread") as thread:
+                self.hosts.action({"host": "lab", "action": action, "instance": ident, "display_scale": 50})
+            command = thread.call_args.kwargs["args"][-1]
+            self.assertEqual(command[command.index(flag) + 1], "50")
+        self.hosts.jobs.clear()
+        with self.assertRaises(ValueError):
+            self.hosts.action(
+                {"host": "lab", "action": "display", "instance": "01", "display_scale": "50;id"}
+            )
+
+    def test_reports_do_not_use_sudo(self):
+        with patch.object(self.hosts, "command", side_effect=["report", "[]"]) as command:
+            self.hosts.worker("lab", self.hosts.profiles["lab"], "logs", ["logs", "01", "--since", "30m"])
+        self.assertFalse(command.call_args_list[0].kwargs["mutate"])
+
+    def test_lifecycle_additions_and_unknown_commands(self):
+        for action in ("restart", "enable", "disable"):
+            self.hosts.jobs.clear()
+            with patch("androidctl.web_hosts.threading.Thread") as thread:
+                self.hosts.action({"host": "lab", "action": action, "instance": "01"})
+            self.assertEqual(thread.call_args.kwargs["args"][-1], [action, "01"])
+        self.hosts.jobs.clear()
+        with self.assertRaises(ValueError):
+            self.hosts.action({"host": "lab", "action": "shell", "instance": "01"})
+
 
 class NvidiaTests(unittest.TestCase):
     def setUp(self):

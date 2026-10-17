@@ -92,12 +92,37 @@ class Hosts:
                 raise ValueError("Host operation already in progress")
             host = dict(self.profiles[ident])
             args = ["list", "--json"]
-            if action not in ("scan", "diagnostics"):
+            reports = {
+                "diagnostics": ["performance", "--json"],
+                "doctor": ["doctor", "--json"],
+                "profiles": ["profiles", "--json"],
+                "ports": ["ports", "--json"],
+                "gpu-list": ["gpu", "list", "--json"],
+                "config": ["config", "show"],
+                "sdk-images": ["sdk", "images"],
+                "sdk-status": ["sdk", "status"],
+            }
+            if action in reports:
+                args = reports[action]
+            elif action != "scan":
                 instance = str(data.get("instance", ""))
                 if not re.fullmatch(r"\d{1,2}", instance) or not 1 <= int(instance) <= 64:
                     raise ValueError("Instance ID must be 01–64")
                 instance = f"{int(instance):02d}"
-                if action not in ("create", "start", "stop", "delete", "renderer"):
+                if action not in (
+                    "create",
+                    "start",
+                    "stop",
+                    "restart",
+                    "enable",
+                    "disable",
+                    "delete",
+                    "renderer",
+                    "display",
+                    "logs",
+                    "info",
+                    "health",
+                ):
                     raise ValueError("Unknown host action")
                 known = self.inventory.get(ident)
                 if known is None:
@@ -106,6 +131,15 @@ class Hosts:
                 if (action == "create") == exists:
                     raise ValueError("Instance already exists" if exists else "Instance not found; scan host")
                 args = [action, instance]
+                if action in ("info", "health"):
+                    args.append("--json")
+                if action == "logs":
+                    args.extend(["--since", "30m"])
+                if action == "display" or (action == "create" and "display_scale" in data):
+                    scale = data.get("display_scale")
+                    if type(scale) is not int or scale not in (25, 33, 50, 75, 100):
+                        raise ValueError("Invalid display scale")
+                    args.extend(["--scale" if action == "display" else "--display-scale", str(scale)])
                 if action == "renderer":
                     mode = data.get("gpu")
                     if mode not in ("host", "swangle"):
@@ -139,10 +173,21 @@ class Hosts:
     def worker(self, ident, host, action, args):
         output = ""
         try:
-            if action == "diagnostics":
-                output = self.command(host, ["performance", "--json"])
-            elif action != "scan":
-                output = self.command(host, args, mutate=True)
+            if action != "scan":
+                readonly = action in (
+                    "diagnostics",
+                    "doctor",
+                    "profiles",
+                    "ports",
+                    "gpu-list",
+                    "config",
+                    "sdk-images",
+                    "sdk-status",
+                    "logs",
+                    "info",
+                    "health",
+                )
+                output = self.command(host, args, mutate=not readonly)
             rows = json.loads(self.command(host, ["list", "--json"]))
             if not isinstance(rows, list):
                 raise ValueError("Invalid host inventory response")

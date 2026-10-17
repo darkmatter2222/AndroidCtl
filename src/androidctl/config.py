@@ -127,6 +127,7 @@ class Instance:
     dri_prime: str = "auto"
     gpu_pci: str = ""
     autostart: bool = False
+    display_scale: int = 0
     native_pixel_display: bool = False
     disable_guest_vulkan: bool = False
 
@@ -139,6 +140,8 @@ class Instance:
         return f"127.0.0.1:{self.local_adb_port}"
 
     def validate(self):
+        if self.display_scale not in (0, 25, 33, 50, 75, 100):
+            raise Error("Invalid display scale.")
         if self.id != normalize_id(self.id):
             raise Error("Instance ID must be canonical (01, 02, …).")
         for key in ("name", "profile", "image"):

@@ -18,6 +18,9 @@ def parser():
     sub = p.add_subparsers(dest="command")
     sub.add_parser("version")
     sub.add_parser("performance").add_argument("--json", action="store_true")
+    display = sub.add_parser("display", help="Save default resolution and apply when running")
+    display.add_argument("id")
+    display.add_argument("--scale", type=int, choices=(25, 33, 50, 75, 100), required=True)
     renderer = sub.add_parser("renderer", help="Change a stopped instance renderer without deleting data")
     renderer.add_argument("id")
     renderer.add_argument(
@@ -50,6 +53,7 @@ def parser():
     c.add_argument("--architecture", default="x86_64")
     c.add_argument("--install-image", action="store_true")
     c.add_argument("--start", action="store_true")
+    c.add_argument("--display-scale", type=int, choices=(25, 33, 50, 75, 100), default=0)
     for name in ("start", "stop", "restart", "enable", "disable", "delete", "logs", "shell", "adb"):
         s = sub.add_parser(name)
         s.add_argument("id")
@@ -253,7 +257,12 @@ def main(argv=None):
                 output(instance.start(cfg, obj))
         else:
             obj = get_instance(cfg, args.id)
-            if cmd in ("start", "stop", "restart", "enable", "disable", "delete"):
+            if cmd == "display":
+                from .display import configure
+
+                require_root()
+                output(asdict(configure(cfg, obj, args.scale)))
+            elif cmd in ("start", "stop", "restart", "enable", "disable", "delete"):
                 require_root()
                 if cmd in ("stop", "restart"):
                     instance.stop(cfg, obj)

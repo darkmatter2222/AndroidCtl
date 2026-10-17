@@ -41,6 +41,7 @@ def create(cfg, args):
             gpu_mode=args.gpu or cfg.default_gpu_mode,
             gpu_pci=args.gpu_pci or "",
             dri_prime=cfg.dri_prime,
+            display_scale=getattr(args, "display_scale", 0),
         ).validate()
         if any(i.name == obj.name for i in existing):
             raise Error("AVD name already registered.", 4)

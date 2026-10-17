@@ -117,7 +117,11 @@ def postboot(cfg, obj):
         time.sleep(2)
     else:
         raise Error("Android boot timeout; check renderer and emulator journal.", 9)
-    if obj.native_pixel_display:
+    if obj.display_scale:
+        from .display import apply
+
+        apply(cfg, obj)
+    elif obj.native_pixel_display:
         # Clear persistent logical overrides from previous performance tuning.
         adb.command(cfg, obj, ["shell", "wm", "size", "reset"])
         adb.command(cfg, obj, ["shell", "wm", "density", "reset"])
