@@ -94,3 +94,31 @@ Only one management job runs per host at a time. Status and bounded command outp
 Host profiles persist alongside the device file as `web-hosts.json`. `GET /api/hosts` returns profiles, cached inventory and operation state. `POST /api/host-action` accepts: `save` (`id`, `target`, `endpoint_host`, `port`); `scan`/`diagnostics` (`host`); `start`/`stop` (`host`, `instance`); `create` (plus `profile`, `api`, `ram`, `cpus`); `renderer` (plus `gpu`: `host` or `swangle`); `delete` (plus exact `confirm`: `DELETE 01`, and boolean `erase_data`). The same local session token and origin checks apply. The remote command is built from allowlisted fields, not arbitrary shell text.
 
 Browser capture concurrency is capped at two with separate capacity from input/control work, so a large grid cannot fill every ADB slot with screenshots. This reduces capture contention; it is not a guarantee that the Android guest itself will respond quickly.
+
+
+## Guided workspace
+
+The toolbar starts with tasks rather than connection configuration fields:
+
+- **Add device** guides network, USB, or wireless pairing setup. Network IP and
+  debugging port are separate fields. Pairing asks for its separate pairing port.
+  Review the assembled address before connecting. A failed connection retains the
+  saved tile and displays the error in the wizard.
+- **Servers → Set up server** asks separately for a server IP, SSH username, and
+  SSH port. It assembles the SSH target, saves the profile, and queues a scan.
+  The server panel shows progress, actionable errors, and expandable raw details.
+  **Edit connection** repairs an existing profile under the same server name.
+  Existing trusted host keys, SSH key authentication, and the documented
+  passwordless sudo setup are still required; the wizard does not install them.
+- **Create Android** selects a server, unused instance number, and resource preset.
+  Hardware profile and API level live under advanced image settings. Review before
+  creating; watch the server panel for completion. Scan the server first and
+  install the required SDK image before creation.
+- Tiles keep connection, preview, live view, and navigation controls available.
+  **Device settings** contains inspection, resolution, reboot, and forgetting a
+  connection. **Instance settings** contains renderer selection and deletion.
+  Disconnect retains a tile; stopping a managed instance shuts Android down.
+  Open live view launches native scrcpy; browser previews remain screenshots.
+
+Server setup reports a queued test, not a successful login. Consult the resulting
+server status before attempting lifecycle actions.
