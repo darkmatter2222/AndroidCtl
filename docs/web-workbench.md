@@ -21,6 +21,8 @@ androidctl-web --adb-port 5038 --adb /opt/android-sdk/platform-tools/adb
 androidctl-web --no-browser
 ```
 
+The web listener prefers port 8765. If that default is blocked/reserved or in use, it automatically asks the OS for an available port and opens the actual URL. `--port 0` always requests automatic selection. An explicitly specified nonzero port is honored without fallback. Windows `WinError 10013` at bind can indicate a reserved or exclusively held port; it does not mean the app needs administrator privileges. If even `--port 0` fails, check endpoint security policy rather than changing firewall/port reservations blindly.
+
 Desktop ADB defaults to 5037. AndroidCtl's dedicated managed host server uses 5038; choose it explicitly. Existing devices on the selected ADB server are discovered automatically. To use remote configured fleet devices, run `androidctl fleet screen` on the host and add the reported endpoints here. This version does not automatically import OpenCode aliases or host instance configuration.
 
 The command opens the browser and prints a URL containing a per-process session token. Reopen that complete URL after a restart; a stale tab's previous token will be rejected. The browser moves the token into session storage and removes it from the address bar. The service binds only to 127.0.0.1, validates Host/Origin, and requires the token for all API requests. No CORS, arbitrary shell endpoint, or public bind option is provided. Run as your normal desktop user, not root.

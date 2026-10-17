@@ -1,12 +1,13 @@
+import errno
 import json
 import tempfile
 import threading
 import unittest
 from http.client import HTTPConnection
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from androidctl.web import Workbench, make_handler
+from androidctl.web import Workbench, bind_server, make_handler
 from http.server import ThreadingHTTPServer
 
 
@@ -78,3 +79,30 @@ class WebTests(unittest.TestCase):
             status, data = request("/api/devices", headers)
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(data)["devices"][0]["state"], "disconnected")
+
+
+class BindTests(unittest.TestCase):
+    def test_default_falls_back_for_blocked_or_busy_port(self):
+        for code in (errno.EACCES, errno.EADDRINUSE):
+            server = Mock()
+            with patch(
+                "androidctl.web.ThreadingHTTPServer", side_effect=[OSError(code, "blocked"), server]
+            ) as factory:
+                self.assertIs(bind_server("handler"), server)
+                self.assertEqual(factory.call_args_list[0].args, (("127.0.0.1", 8765), "handler"))
+                self.assertEqual(factory.call_args_list[1].args, (("127.0.0.1", 0), "handler"))
+
+    def test_explicit_port_and_unrelated_errors_do_not_fallback(self):
+        for port, code in ((8765, errno.EACCES), (0, errno.EACCES), (None, errno.EBADF)):
+            with patch("androidctl.web.ThreadingHTTPServer", side_effect=OSError(code, "failed")) as factory:
+                with self.assertRaises(OSError):
+                    bind_server("handler", port)
+                factory.assert_called_once()
+
+    def test_real_automatic_port(self):
+        server = bind_server(make_handler(None, "token"), 0)
+        try:
+            self.assertGreater(server.server_port, 0)
+            self.assertEqual(server.server_address[0], "127.0.0.1")
+        finally:
+            server.server_close()

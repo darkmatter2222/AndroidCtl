@@ -1,12 +1,14 @@
 """Local ADB workbench. Intentionally independent of Linux host-manager imports."""
 
 import argparse
+import errno
 import json
 import os
 import re
 import secrets
 import shutil
 import subprocess
+import sys
 import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -198,18 +200,45 @@ def make_handler(workbench, token):
     return Handler
 
 
+def bind_server(handler, port=None):
+    """Prefer 8765, allowing the OS to choose only when no port was specified."""
+    requested = 8765 if port is None else port
+    try:
+        return ThreadingHTTPServer(("127.0.0.1", requested), handler)
+    except OSError as exc:
+        if port is not None or not (
+            exc.errno in (errno.EACCES, errno.EADDRINUSE) or getattr(exc, "winerror", None) in (10013, 10048)
+        ):
+            raise
+        print("Default port 8765 is unavailable; choosing an available local port.", file=sys.stderr)
+        return ThreadingHTTPServer(("127.0.0.1", 0), handler)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Start the local AndroidCtl device workbench")
-    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument(
+        "--port", type=int, help="Local port (default: 8765 with automatic fallback; 0: auto)"
+    )
     parser.add_argument("--adb", default=shutil.which("adb") or "adb")
     parser.add_argument("--scrcpy", default=shutil.which("scrcpy") or "scrcpy")
     parser.add_argument("--adb-port", type=int, default=5037)
     parser.add_argument("--state")
     parser.add_argument("--no-browser", action="store_true")
     args = parser.parse_args(argv)
+    if args.port is not None and not 0 <= args.port <= 65535:
+        parser.error("--port must be between 0 and 65535")
     token = secrets.token_urlsafe(32)
     workbench = Workbench(args.adb, args.scrcpy, args.adb_port, args.state)
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(workbench, token))
+    try:
+        server = bind_server(make_handler(workbench, token), args.port)
+    except OSError as exc:
+        print(
+            f"Cannot start the local web listener: {exc}\n"
+            "Try start-web.bat --port 0 (or androidctl-web --port 0). "
+            "If automatic selection also fails, check local security software policy.",
+            file=sys.stderr,
+        )
+        return 1
     server.daemon_threads = True
     url = f"http://127.0.0.1:{server.server_port}/#token={token}"
     print(f"AndroidCtl workbench: {url}", flush=True)
