@@ -146,9 +146,25 @@ class DisplayTests(WebTests):
         with patch.object(self.workbench, "run") as run:
             self.workbench.action({"serial": "usb", "action": "disconnect"})
             run.assert_not_called()
+            run.return_value = "device\n"
             self.workbench.action({"serial": "usb", "action": "connect"})
-            run.assert_not_called()
+            run.assert_called_once_with("-s", "usb", "get-state")
         self.assertNotIn("usb", self.workbench.detached)
+
+    def test_bare_ip_is_not_a_usb_device(self):
+        for action in ("save", "connect", "pair"):
+            for serial in ("192.168.86.48", "::1", "[::1]"):
+                with patch.object(self.workbench, "run") as run:
+                    with self.assertRaisesRegex(ValueError, "AND port"):
+                        self.workbench.action({"serial": serial, "action": action})
+                    run.assert_not_called()
+
+    def test_offline_usb_stays_detached(self):
+        self.workbench.detached.add("usb")
+        with patch.object(self.workbench, "run", return_value="offline"):
+            with self.assertRaisesRegex(ValueError, "not online"):
+                self.workbench.action({"serial": "usb", "action": "connect"})
+        self.assertIn("usb", self.workbench.detached)
 
     def test_restart_waits_for_new_boot_then_applies(self):
         profile = {"id": "50", "size": "672x1496", "density": 240}

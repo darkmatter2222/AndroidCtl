@@ -3,6 +3,7 @@
 import argparse
 import errno
 import json
+import ipaddress
 import os
 import re
 import secrets
@@ -213,10 +214,22 @@ class Workbench:
             if ":" in serial:
                 self.run("disconnect", serial)
             return {"message": "Disconnected from workbench; previews stopped. Android is still running."}
+        if action in {"save", "connect", "pair"}:
+            try:
+                ipaddress.ip_address(serial.strip("[]"))
+            except ValueError:
+                pass
+            else:
+                raise ValueError(
+                    "Network devices need an IP address AND port, e.g. "
+                    "192.168.86.48:15551. The name field is only a display label."
+                )
         if action == "connect" and ":" not in serial:
+            if self.run("-s", serial, "get-state").strip() != "device":
+                raise ValueError("Device is not online/authorized; check its connection and USB authorization")
             with self.lock:
                 self.detached.discard(serial)
-            return {"message": "Workbench reattached; USB must still be plugged in and authorized"}
+            return {"message": "Workbench reattached; device is online"}
         if action == "save":
             name = str(data.get("name", serial))[:100]
             with self.lock:
