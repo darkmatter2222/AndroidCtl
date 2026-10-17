@@ -42,11 +42,30 @@ def selection(instance):
             5,
         )
     device = next((d for d in discover() if d["pci"] == pci), None)
+    if device and device["driver"] == "nvidia":
+        # EGL vendor selection is not reliable per PCI on multi-NVIDIA hosts.
+        if len([d for d in discover() if d["driver"] == "nvidia"]) != 1:
+            raise Error("NVIDIA rendering currently requires a single NVIDIA GPU host.", 5)
+        info = Path("/proc/driver/nvidia/gpus") / pci / "information"
+        try:
+            import re
+
+            match = re.search(r"Device Minor:\s*(\d+)", info.read_text())
+            if not match:
+                raise ValueError("missing NVIDIA device minor")
+            node = f"/dev/nvidia{int(match[1])}"
+            required = [node, "/dev/nvidiactl"]
+            if not all(Path(n).exists() for n in required):
+                raise ValueError("missing NVIDIA device nodes")
+        except (OSError, ValueError) as exc:
+            raise Error(f"NVIDIA device setup unavailable: {exc}", 5) from exc
+        optional = ["/dev/nvidia-modeset", "/dev/nvidia-uvm", "/dev/nvidia-uvm-tools"]
+        return {**device, "nodes": device["nodes"] + required + [n for n in optional if Path(n).exists()]}
     if not device or not device["render_node"]:
         raise Error(f"Selected GPU {pci} has no render node.", 5)
     if device["driver"] not in ("i915", "xe", "amdgpu", "radeon", "nouveau"):
         raise Error(
-            "v1 physical GPU selection supports Mesa drivers only; proprietary NVIDIA is not automatically used. Choose software.",
+            "Unsupported GPU driver. Use supported Mesa or single-NVIDIA host rendering, or choose software.",
             5,
         )
     return device
@@ -56,5 +75,58 @@ def environment(instance):
     dev = selection(instance)
     if not dev:
         return {"LIBGL_ALWAYS_SOFTWARE": "1"}
+    if dev["driver"] == "nvidia":
+        env = {
+            "__GLX_VENDOR_LIBRARY_NAME": "nvidia",
+            "__NV_PRIME_RENDER_OFFLOAD": "1",
+            "__VK_LAYER_NV_optimus": "NVIDIA_only",
+        }
+        vendor = Path("/usr/share/glvnd/egl_vendor.d/10_nvidia.json")
+        if vendor.exists():
+            env["__EGL_VENDOR_LIBRARY_FILENAMES"] = str(vendor)
+        return env
     selector = "pci-" + dev["pci"].replace(":", "_").replace(".", "_")
     return {"DRI_PRIME": selector, "MESA_VK_DEVICE_SELECT_FORCE_DEFAULT_DEVICE": "1"}
+
+
+def configure(cfg, obj, mode, pci="auto"):
+    """Change only a stopped instance's renderer; keep userdata and Vulkan policy."""
+    from dataclasses import replace
+
+    from . import systemd
+    from .config import save
+    from .util import lock
+
+    with lock(cfg):
+        if systemd.properties(obj.id).get("ActiveState") not in ("inactive", "failed"):
+            raise Error("Stop the instance before changing its renderer.")
+        if mode == "host" and pci == "auto":
+            candidates = [d for d in discover() if d["driver"] == "nvidia"]
+            if not candidates:
+                candidates = [
+                    d
+                    for d in discover()
+                    if d["render_node"] and d["driver"] in ("i915", "xe", "amdgpu", "radeon", "nouveau")
+                ]
+            if len(candidates) != 1:
+                raise Error(
+                    "Automatic selection requires exactly one NVIDIA GPU or one Mesa GPU; specify --gpu-pci."
+                )
+            pci = candidates[0]["pci"]
+        updated = replace(obj, gpu_mode=mode, gpu_pci=pci if mode == "host" else "").validate()
+        selection(updated)
+        path = Path(cfg.instance_root) / f"{obj.id}.conf"
+        if path.exists():
+            backup = path.with_suffix(".conf.before-renderer")
+            if not backup.exists():
+                from .util import atomic_write
+
+                atomic_write(backup, path.read_text(), 0o600)
+        systemd.gpu_policy(updated)
+        save(path, updated, "instance")
+    return {
+        "id": obj.id,
+        "gpu_mode": updated.gpu_mode,
+        "gpu_pci": updated.gpu_pci,
+        "message": "Renderer saved; start this instance and validate GPU use. Userdata preserved.",
+    }

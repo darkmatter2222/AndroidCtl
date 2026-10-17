@@ -106,3 +106,89 @@ class BindTests(unittest.TestCase):
             self.assertEqual(server.server_address[0], "127.0.0.1")
         finally:
             server.server_close()
+
+
+class DisplayTests(WebTests):
+    def test_profiles_match_native_and_override(self):
+        with patch.object(
+            self.workbench,
+            "run",
+            side_effect=[
+                "Physical size: 1344x2992\nOverride size: 672x1496",
+                "Physical density: 480\nOverride density: 240",
+            ],
+        ):
+            result = self.workbench.display("usb")
+        profiles = {p["id"]: p for p in result["profiles"]}
+        self.assertEqual(profiles["current"]["size"], "672x1496")
+        self.assertEqual(profiles["current"]["density"], 240)
+        self.assertEqual(profiles["default"]["size"], "reset")
+        self.assertEqual(profiles["50"]["size"], "672x1496")
+        self.assertEqual(profiles["50"]["density"], 240)
+        self.assertEqual(profiles["25"]["size"], "336x748")
+
+    def test_disconnect_retains_unsaved_device_and_blocks_frames(self):
+        with patch.object(self.workbench, "run", return_value="disconnected") as run:
+            self.workbench.action({"serial": "host:5555", "action": "disconnect"})
+            run.assert_called_once_with("disconnect", "host:5555")
+        self.assertIn("host:5555", self.workbench.saved)
+        with patch.object(self.workbench, "run", return_value="List of devices attached\nhost:5555 device\n"):
+            self.assertEqual(self.workbench.devices()[0]["state"], "disconnected")
+        with patch.object(self.workbench, "run") as run:
+            with self.assertRaises(ValueError):
+                self.workbench.frame("host:5555")
+            run.assert_not_called()
+        with patch.object(self.workbench, "run", return_value="connected"):
+            self.workbench.action({"serial": "host:5555", "action": "connect"})
+        self.assertNotIn("host:5555", self.workbench.detached)
+
+    def test_usb_detach_does_not_disconnect_other_transports(self):
+        with patch.object(self.workbench, "run") as run:
+            self.workbench.action({"serial": "usb", "action": "disconnect"})
+            run.assert_not_called()
+            self.workbench.action({"serial": "usb", "action": "connect"})
+            run.assert_not_called()
+        self.assertNotIn("usb", self.workbench.detached)
+
+    def test_restart_waits_for_new_boot_then_applies(self):
+        profile = {"id": "50", "size": "672x1496", "density": 240}
+        with (
+            patch.object(self.workbench, "run", side_effect=["", "old", "1", "new", "1"]) as run,
+            patch.object(self.workbench, "apply_display") as apply,
+            patch("androidctl.web.time.sleep"),
+        ):
+            self.workbench.restart_worker("usb", profile, "old")
+        self.assertEqual(run.call_args_list[0].args, ("-s", "usb", "reboot"))
+        apply.assert_called_once_with("usb", profile)
+        self.assertEqual(self.workbench.jobs["usb"]["state"], "done")
+
+    def test_restart_failure_is_reported(self):
+        with patch.object(self.workbench, "run", side_effect=ValueError("reboot denied")):
+            self.workbench.restart_worker("usb", {}, "old")
+        self.assertEqual(self.workbench.jobs["usb"]["state"], "error")
+        self.assertIn("reboot denied", self.workbench.jobs["usb"]["message"])
+
+    def test_unknown_profile_never_reboots(self):
+        with (
+            patch.object(self.workbench, "devices", return_value=[{"serial": "usb", "state": "device"}]),
+            patch.object(self.workbench, "display", return_value={"profiles": []}),
+            patch.object(self.workbench, "run") as run,
+        ):
+            with self.assertRaises(ValueError):
+                self.workbench.action({"serial": "usb", "action": "restart", "profile": ";reboot"})
+            run.assert_not_called()
+
+    def test_reset_is_verified(self):
+        profile = {"id": "default", "size": "reset", "density": "reset"}
+        actual = {
+            "profiles": [{"size": "1344x2992", "density": 480}, profile],
+            "size": "Physical size: 1344x2992",
+            "density": "Physical density: 480",
+        }
+        with (
+            patch.object(self.workbench, "run") as run,
+            patch.object(self.workbench, "display", return_value=actual),
+        ):
+            self.workbench.apply_display("usb", profile)
+        self.assertEqual(run.call_args_list[0].args, ("-s", "usb", "shell", "wm", "size", "reset"))
+        self.assertEqual(run.call_args_list[1].args, ("-s", "usb", "shell", "wm", "density", "reset"))

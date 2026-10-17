@@ -13,7 +13,9 @@ def environment(cfg):
     env = os.environ.copy()
     # Do not inherit another user's SDK, ADB server, graphics selection or keys.
     for key in list(env):
-        if key.startswith(("ANDROID_", "ADB_", "DRI_", "__NV_", "VK_", "MESA_", "LIBGL_")):
+        if key.startswith(
+            ("ANDROID_", "ADB_", "DRI_", "__NV_", "__EGL_", "__GLX_", "__VK_", "VK_", "MESA_", "LIBGL_")
+        ):
             env.pop(key)
     env.update(
         HOME=cfg.service_home,

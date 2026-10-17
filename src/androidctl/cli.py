@@ -17,6 +17,13 @@ def parser():
     p.add_argument("--config", default="/etc/androidctl/androidctl.conf")
     sub = p.add_subparsers(dest="command")
     sub.add_parser("version")
+    sub.add_parser("performance").add_argument("--json", action="store_true")
+    renderer = sub.add_parser("renderer", help="Change a stopped instance renderer without deleting data")
+    renderer.add_argument("id")
+    renderer.add_argument(
+        "--gpu", choices=("host", "swangle", "software", "swiftshader", "lavapipe"), required=True
+    )
+    renderer.add_argument("--gpu-pci", default="auto")
     web = sub.add_parser("web", help="Start local browser device workbench")
     web.add_argument("args", nargs=argparse.REMAINDER)
     f = sub.add_parser("fleet").add_subparsers(dest="action", required=True)
@@ -130,6 +137,15 @@ def main(argv=None):
             if args.config != "/etc/androidctl/androidctl.conf":
                 raise Error("Fleet commands require the installed configuration.")
             return fleet.dispatch(cfg, args)
+        if cmd == "performance":
+            from .performance import report
+
+            output(report(cfg), args.json)
+            return 0
+        if cmd == "renderer":
+            require_root()
+            output(gpu.configure(cfg, get_instance(cfg, args.id), args.gpu, args.gpu_pci))
+            return 0
         if cmd == "doctor":
             rows = host.doctor(cfg)
             output(rows, args.json)
