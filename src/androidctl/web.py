@@ -10,10 +10,13 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
+
+from .web_hosts import Hosts
 
 
 class Workbench:
@@ -22,9 +25,14 @@ class Workbench:
         self.scrcpy = scrcpy
         self.port = port
         self.state = Path(state or Path.home() / ".androidctl" / "web-devices.json")
+        self.hosts = Hosts(self.state.with_name("web-hosts.json"))
         self.lock = threading.RLock()
         self.slots = threading.BoundedSemaphore(8)
+        self.capture_slots = threading.BoundedSemaphore(2)
         self.viewers = {}
+        self.detached = set()
+        self.jobs = {}
+        self.device_locks = {}
         self.saved = json.loads(self.state.read_text()) if self.state.exists() else {}
 
     def run(self, *args, binary=False):
@@ -45,13 +53,46 @@ class Workbench:
     def devices(self):
         with self.lock:
             rows = {s: {"serial": s, "name": n, "state": "disconnected"} for s, n in self.saved.items()}
-        for line in self.run("devices", "-l").splitlines()[1:]:
+        for host in self.hosts.snapshot():
+            for instance in host["instances"]:
+                serial = f"{host['endpoint_host']}:{instance['remote_adb_port']}"
+                row = rows.setdefault(
+                    serial, {"serial": serial, "name": instance["name"], "state": "disconnected"}
+                )
+                row["managed"] = {
+                    "host": host["id"],
+                    "id": instance["id"],
+                    "state": instance["state"],
+                    "gpu": instance["gpu_mode"],
+                    "ram": instance["ram_mb"],
+                    "cpus": instance["cpu_cores"],
+                }
+                if instance["state"] in ("stopped", "failed"):
+                    row["state"] = instance["state"]
+        try:
+            transports = self.run("devices", "-l")
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            if not rows:
+                raise ValueError(f"ADB unavailable: {exc}") from exc
+            transports = ""
+            for row in rows.values():
+                row["details"] = f"ADB unavailable: {exc}"
+        for line in transports.splitlines()[1:]:
             parts = line.split()
             if len(parts) < 2:
                 continue
             serial, status = parts[:2]
             row = rows.setdefault(serial, {"serial": serial, "name": serial})
             row.update(state=status, details=" ".join(parts[2:]))
+        with self.lock:
+            for serial, row in rows.items():
+                if serial in self.detached:
+                    row["state"] = "disconnected"
+                job = self.jobs.get(serial)
+                if job:
+                    row["operation"] = dict(job)
+                    if job["state"] == "running":
+                        row["state"] = "restarting"
         return list(rows.values())
 
     def save(self):
@@ -60,9 +101,122 @@ class Workbench:
         tmp.write_text(json.dumps(self.saved, indent=2))
         os.replace(tmp, self.state)
 
+    def device_lock(self, serial):
+        with self.lock:
+            return self.device_locks.setdefault(serial, threading.RLock())
+
+    def display(self, serial):
+        size = self.run("-s", serial, "shell", "wm", "size")
+        density = self.run("-s", serial, "shell", "wm", "density")
+        physical = re.search(r"Physical size:\s*(\d+)x(\d+)", size)
+        dpi = re.search(r"Physical density:\s*(\d+)", density)
+        override = re.search(r"Override size:\s*(\d+)x(\d+)", size)
+        override_dpi = re.search(r"Override density:\s*(\d+)", density)
+        if not physical or not dpi:
+            raise ValueError("Cannot read native display size/density")
+        width, height = map(int, physical.groups())
+        native_dpi = int(dpi[1])
+        current = override or physical
+        profiles = [
+            {
+                "id": "current",
+                "label": f"Keep current — {current[1]}×{current[2]}",
+                "size": f"{current[1]}x{current[2]}",
+                "density": int((override_dpi or dpi)[1]),
+            },
+            {
+                "id": "default",
+                "label": f"Native default — {width}×{height}",
+                "size": "reset",
+                "density": "reset",
+            },
+        ]
+        for percent in (75, 50, 33, 25):
+            w, h = max(2, round(width * percent / 200) * 2), max(2, round(height * percent / 200) * 2)
+            scaled_dpi = max(72, round(native_dpi * percent / 100))
+            profiles.append(
+                {
+                    "id": str(percent),
+                    "label": f"{w}×{h} — {percent}% / {scaled_dpi} dpi",
+                    "size": f"{w}x{h}",
+                    "density": scaled_dpi,
+                }
+            )
+        return {"profiles": profiles, "size": size, "density": density}
+
+    def apply_display(self, serial, profile):
+        self.run("-s", serial, "shell", "wm", "size", profile["size"])
+        self.run("-s", serial, "shell", "wm", "density", str(profile["density"]))
+        actual = self.display(serial)
+        current = actual["profiles"][0]
+        expected = actual["profiles"][1] if profile["id"] == "default" else profile
+        if expected["size"] == "reset":
+            if "Override" in actual["size"] or "Override" in actual["density"]:
+                raise ValueError("Android did not clear the display override")
+        elif current["size"] != expected["size"] or current["density"] != expected["density"]:
+            raise ValueError("Android did not apply the requested size/density")
+        return actual
+
+    def restart_worker(self, serial, profile, old_boot):
+        try:
+            self.run("-s", serial, "reboot")
+            deadline = time.monotonic() + 240
+            last_error = "Device has not completed a new boot"
+            while time.monotonic() < deadline:
+                try:
+                    if ":" in serial:
+                        self.run("connect", serial)
+                    boot = self.run("-s", serial, "shell", "cat", "/proc/sys/kernel/random/boot_id")
+                    ready = self.run("-s", serial, "shell", "getprop", "sys.boot_completed")
+                    if boot and boot != old_boot and ready == "1":
+                        self.apply_display(serial, profile)
+                        with self.lock:
+                            self.jobs[serial] = {"state": "done", "message": "Restarted; display verified"}
+                        return
+                except (OSError, ValueError, subprocess.SubprocessError) as exc:
+                    last_error = str(exc)
+                time.sleep(2)
+            raise ValueError(
+                f"Restart timed out after 240 seconds: {last_error}; reconnect and inspect the device"
+            )
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            with self.lock:
+                self.jobs[serial] = {"state": "error", "message": str(exc)}
+
+    def frame(self, serial):
+        with self.lock:
+            if serial in self.detached or self.jobs.get(serial, {}).get("state") == "running":
+                raise ValueError("Device disconnected or restarting; preview stopped")
+        # Do not queue an unbounded screenshot backlog ahead of control commands.
+        if not self.capture_slots.acquire(blocking=False):
+            raise ValueError("Capture capacity busy; next preview will retry")
+        try:
+            return self.run("-s", serial, "exec-out", "screencap", "-p", binary=True)
+        finally:
+            self.capture_slots.release()
+
     def action(self, data):
         action = data.get("action")
         serial = self.serial(data.get("serial"))
+        with self.lock:
+            if self.jobs.get(serial, {}).get("state") == "running":
+                raise ValueError("Restart already in progress; wait for completion")
+        if action == "disconnect":
+            with self.lock:
+                self.saved.setdefault(serial, serial)
+                self.save()
+                self.detached.add(serial)
+                process = self.viewers.get(serial)
+                if process and process.poll() is None:
+                    process.terminate()
+            # ADB cannot detach one USB transport. Pause its workbench access only.
+            if ":" in serial:
+                self.run("disconnect", serial)
+            return {"message": "Disconnected from workbench; previews stopped. Android is still running."}
+        if action == "connect" and ":" not in serial:
+            with self.lock:
+                self.detached.discard(serial)
+            return {"message": "Workbench reattached; USB must still be plugged in and authorized"}
         if action == "save":
             name = str(data.get("name", serial))[:100]
             with self.lock:
@@ -74,7 +228,7 @@ class Workbench:
                 self.saved.pop(serial, None)
                 self.save()
             return {"message": "Removed saved connection; device was not disconnected"}
-        if action in ("connect", "disconnect", "pair"):
+        if action in ("connect", "pair"):
             if not re.fullmatch(r"(?:[A-Za-z0-9_.-]+|\[[0-9a-fA-F:]+\]):[0-9]{1,5}", serial):
                 raise ValueError("Network connection requires host:port")
             if not 1 <= int(serial.rsplit(":", 1)[1]) <= 65535:
@@ -88,9 +242,38 @@ class Workbench:
             message = self.run(*args)
             if any(word in message.lower() for word in ("failed", "cannot", "unable")):
                 raise ValueError(message)
+            if action == "connect":
+                with self.lock:
+                    self.detached.discard(serial)
             return {"message": message}
         if not any(d["serial"] == serial and d["state"] == "device" for d in self.devices()):
             raise ValueError("Device is not online/authorized")
+        if action == "display":
+            return self.display(serial)
+        if action in ("resolution", "restart"):
+            with self.device_lock(serial):
+                if self.jobs.get(serial, {}).get("state") == "running":
+                    raise ValueError("Restart already in progress")
+                profiles = self.display(serial)["profiles"]
+                profile = next((p for p in profiles if p["id"] == data.get("profile", "current")), None)
+                if profile is None:
+                    raise ValueError("Unknown resolution profile")
+                if action == "resolution":
+                    result = self.apply_display(serial, profile)
+                    return {"message": "Resolution applied and verified", **result}
+                old_boot = self.run("-s", serial, "shell", "cat", "/proc/sys/kernel/random/boot_id")
+                if not old_boot:
+                    raise ValueError("Cannot read boot identity; restart not issued")
+                self.saved.setdefault(serial, serial)
+                self.save()
+                self.jobs[serial] = {
+                    "state": "running",
+                    "message": "Restarting Android; waiting for boot and display",
+                }
+                threading.Thread(
+                    target=self.restart_worker, args=(serial, profile, old_boot), daemon=True
+                ).start()
+            return {"message": "Restart requested; keep the workbench server running"}
         if action == "info":
             return {
                 "properties": self.run("-s", serial, "shell", "getprop"),
@@ -167,11 +350,13 @@ def make_handler(workbench, token):
             if not secrets.compare_digest(self.headers.get("X-AndroidCtl-Token", ""), token):
                 return self.respond(401, {"error": "Missing/invalid session token"})
             try:
+                if url.path == "/api/hosts":
+                    return self.respond(200, {"hosts": workbench.hosts.snapshot()})
                 if url.path == "/api/devices":
                     return self.respond(200, {"devices": workbench.devices()})
                 if url.path == "/api/frame":
                     serial = workbench.serial(parse_qs(url.query).get("serial", [None])[0])
-                    frame = workbench.run("-s", serial, "exec-out", "screencap", "-p", binary=True)
+                    frame = workbench.frame(serial)
                     if not frame.startswith(b"\x89PNG\r\n\x1a\n"):
                         raise ValueError("Device did not return a PNG frame")
                     return self.respond(200, frame, "image/png")
@@ -184,7 +369,7 @@ def make_handler(workbench, token):
                 self.headers.get("X-AndroidCtl-Token", ""), token
             ):
                 return self.respond(403, {"error": "Invalid host/origin/token"})
-            if self.path != "/api/action":
+            if self.path not in ("/api/action", "/api/host-action"):
                 return self.respond(404, {"error": "Not found"})
             try:
                 size = int(self.headers.get("Content-Length", 0))
@@ -193,7 +378,12 @@ def make_handler(workbench, token):
                 data = json.loads(self.rfile.read(size))
                 if not isinstance(data, dict):
                     raise ValueError("Expected JSON object")
-                self.respond(200, workbench.action(data))
+                self.respond(
+                    200,
+                    workbench.hosts.action(data)
+                    if self.path == "/api/host-action"
+                    else workbench.action(data),
+                )
             except (ValueError, OSError, subprocess.SubprocessError) as exc:
                 self.respond(400, {"error": str(exc)})
 

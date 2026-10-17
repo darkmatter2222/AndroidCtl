@@ -19,7 +19,7 @@ python -m pip install -e .
 androidctl-web
 ```
 
-Open a dense dark device grid locally: saved ADB connections, wireless pairing, draggable tiles, focus mode, screenshot previews, opt-in tap/swipe control, device inspection and native scrcpy launch. Works independently of the Linux emulator host manager on Windows/Linux/macOS. Requires local ADB; scrcpy is optional. Browser previews are refreshed screenshots, not video. See [setup, API, agent skill and limitations](docs/web-workbench.md).
+Open a dense dark device grid locally: saved ADB connections, wireless pairing, draggable tiles, focus mode, screenshot previews, opt-in tap/swipe control, device inspection, native scrcpy launch, resolution/reboot controls, and host-backed instance start/stop/create/delete. Works independently of the Linux emulator host manager on Windows/Linux/macOS. Requires local ADB; scrcpy is optional. Browser previews are refreshed screenshots, not video. See [setup, API, agent skill and limitations](docs/web-workbench.md).
 
 ## OpenCode 2.x: open a device with `/androidctl A`
 
@@ -267,7 +267,7 @@ Further details and rollback: [four-device fleet guide](docs/fleet.md).
 - RAM for each device plus a host reserve. Defaults: 4 GB/device, 4 CPU cores, maximum two simultaneous devices before fleet setup raises the limit to at least four, 4 GB host RAM reserve.
 - Free storage for SDK images and growing persistent userdata; default virtual data partition is 16 GB/device.
 - Internet access to Google's SDK downloads and Ubuntu package repositories; acceptance of Google's SDK licenses.
-- No desktop or Android Studio required. Software graphics is the initial default. Physical Mesa GPU use requires explicit selection.
+- No desktop or Android Studio required. Software graphics is the initial default. Physical GPU use requires explicit selection; the single-NVIDIA path is experimental.
 
 ## Install
 
@@ -385,7 +385,7 @@ For Mesa drivers, a stable global selector is also supported:
 sudo androidctl config set dri_prime <MESA_PCI_SELECTOR>
 ```
 
-Use the `pci-` form described in [GPU configuration](docs/gpu.md). Defaults apply to newly created instances. Hardware/auto modes require an explicit selection. The selected device's nodes are the only GPU nodes allowed by the emulator's systemd device policy. Proprietary NVIDIA selection is not supported in v1; software rendering leaves physical accelerators unassigned.
+Use the `pci-` form described in [GPU configuration](docs/gpu.md). Defaults apply to newly created instances. Hardware/auto modes require an explicit selection. The selected device's nodes are the only GPU nodes allowed by the emulator's systemd device policy. Single-NVIDIA hosts now have an opt-in experimental path (including RTX 3090); see the [trial and rollback procedure](docs/gpu.md#rtx-3090-performance-trial-existing-instances). Software rendering leaves physical accelerators unassigned.
 
 Software modes include `software`, `swiftshader`, `lavapipe`, and `swangle`; availability depends on your emulator version. The deprecated `swiftshader_indirect` name is accepted for older installations. A failed renderer is reported; no other physical GPU is silently selected.
 
