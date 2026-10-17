@@ -89,3 +89,16 @@ class DisplayTests(unittest.TestCase):
         apply.assert_not_called()
         args = execute.call_args.args[1]
         self.assertEqual(args[args.index("-skin") + 1], "1344x2992")
+
+    def test_inventory_lists_stopped_storage_without_guest_queries(self):
+        from androidctl.health import inventory
+
+        with (
+            patch("androidctl.health.systemd.properties", return_value={"ActiveState": "inactive"}),
+            patch("androidctl.health.adb.booted") as boot,
+        ):
+            row = inventory(Config(), self.obj)
+        self.assertEqual(row["state"], "stopped")
+        self.assertEqual(row["avd"], "/var/lib/androidctl/avd/phone.avd")
+        self.assertEqual(row["disk_size"], "16G")
+        boot.assert_not_called()

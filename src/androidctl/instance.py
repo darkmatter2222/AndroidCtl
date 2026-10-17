@@ -6,7 +6,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from . import avd, gpu, ports, systemd
-from .config import Instance, instances, save
+from .config import Instance, get_instance, instances, save
 from .errors import Error
 from .health import status
 from .sdk import SDK
@@ -22,8 +22,15 @@ def create(cfg, args):
         profile = args.profile or cfg.default_profile
         api = cfg.default_api if args.api is None else args.api
         normalized = "".join(w.capitalize() if not w.isdigit() else w for w in profile.split("_"))
+        runtime_ports = getattr(args, "runtime_ports", False)
+        if runtime_ports and args.console_port is not None:
+            raise Error("Do not combine --runtime-ports and --console-port.")
         console, local, remote = ports.allocate(
-            ident, cfg.console_base_port, cfg.remote_adb_base_port, args.console_port, args.remote_adb_port
+            ident,
+            cfg.console_base_port,
+            cfg.remote_adb_base_port,
+            5554 if runtime_ports else args.console_port,
+            args.remote_adb_port,
         )
         obj = Instance(
             id=ident,
@@ -42,11 +49,12 @@ def create(cfg, args):
             gpu_pci=args.gpu_pci or "",
             dri_prime=cfg.dri_prime,
             display_scale=getattr(args, "display_scale", 0),
+            runtime_ports=runtime_ports,
         ).validate()
         if any(i.name == obj.name for i in existing):
             raise Error("AVD name already registered.", 4)
         ports.conflicts(obj, existing, cfg.adb_server_port)
-        ports.available((console, local, remote))
+        ports.available((remote,) if runtime_ports else (console, local, remote))
         gpu.selection(obj)
         sdk = SDK(cfg)
         profiles = sdk.profiles()
@@ -98,7 +106,8 @@ def start(cfg, obj, force=False):
             raise
     deadline = time.monotonic() + cfg.boot_timeout + 30
     while time.monotonic() < deadline:
-        view = status(cfg, obj)
+        current = get_instance(cfg, obj.id) if obj.runtime_ports else obj
+        view = status(cfg, current)
         if view["health"] == "healthy":
             return view
         if view["state"] == "failed":

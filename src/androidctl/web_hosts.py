@@ -6,6 +6,7 @@ import re
 import shlex
 import subprocess
 import threading
+import time
 from pathlib import Path
 
 
@@ -16,6 +17,19 @@ class Hosts:
         self.inventory = {}
         self.jobs = {}
         self.lock = threading.RLock()
+        self.observed = {}
+        self.attempted = set()
+        self.cache_path = self.state.with_name(self.state.stem + "-inventory.json")
+        try:
+            cached = json.loads(self.cache_path.read_text())
+            for ident, record in cached.items():
+                if record.get("profile") == self.profiles.get(ident) and isinstance(record.get("rows"), list):
+                    self.validate_inventory(record["rows"])
+                    self.inventory[ident] = record["rows"]
+                    self.observed[ident] = float(record["at"])
+        except (OSError, ValueError, TypeError, KeyError, AttributeError):
+            self.inventory.clear()
+            self.observed.clear()
 
     @staticmethod
     def word(value, label):
@@ -41,6 +55,8 @@ class Hosts:
                 raise ValueError("Host operation in progress")
             self.profiles[ident] = {"id": ident, "target": target, "endpoint_host": endpoint, "port": port}
             self.inventory.pop(ident, None)
+            self.observed.pop(ident, None)
+            self.attempted.discard(ident)
             self.state.parent.mkdir(parents=True, exist_ok=True)
             tmp = self.state.with_suffix(".tmp")
             tmp.write_text(json.dumps(self.profiles, indent=2))
@@ -67,16 +83,44 @@ class Hosts:
         elif os.name == "nt":
             raise ValueError("Local instance management requires Linux; configure your Linux host over SSH")
         result = subprocess.run(
-            command, capture_output=True, text=True, timeout=600, stdin=subprocess.DEVNULL
+            command,
+            capture_output=True,
+            text=True,
+            timeout=90 if args[0] in ("inventory", "list") else 600,
+            stdin=subprocess.DEVNULL,
         )
         if result.returncode:
             raise ValueError((result.stderr or result.stdout).strip()[-4000:] or "Host command failed")
         return result.stdout
 
-    def snapshot(self):
+    def snapshot(self, auto_scan=False):
+        if auto_scan:
+            with self.lock:
+                pending = [
+                    key
+                    for key in self.profiles
+                    if key not in self.attempted and self.jobs.get(key, {}).get("state") != "running"
+                ]
+                self.attempted.update(pending)
+            for key in pending:
+                try:
+                    self.action({"host": key, "action": "scan"})
+                except ValueError:
+                    pass
         with self.lock:
             return [
-                {**h, "operation": self.jobs.get(key), "instances": self.inventory.get(key, [])}
+                {
+                    **h,
+                    "operation": self.jobs.get(key),
+                    "instances": self.inventory.get(key, []),
+                    "inventory_known": key in self.inventory,
+                    "inventory_at": self.observed.get(key),
+                    "inventory_stale": (
+                        key not in self.observed
+                        or time.time() - self.observed[key] > 60
+                        or self.jobs.get(key, {}).get("state") == "error"
+                    ),
+                }
                 for key, h in self.profiles.items()
             ]
 
@@ -102,12 +146,17 @@ class Hosts:
                 "sdk-images": ["sdk", "images"],
                 "sdk-status": ["sdk", "status"],
             }
-            if action in reports:
+            if action == "capacity":
+                maximum = data.get("maximum")
+                if type(maximum) is not int or not 1 <= maximum <= 65:
+                    raise ValueError("Concurrent instance limit must be 1–65")
+                args = ["config", "set", "max_running_instances", str(maximum)]
+            elif action in reports:
                 args = reports[action]
             elif action != "scan":
                 instance = str(data.get("instance", ""))
-                if not re.fullmatch(r"\d{1,2}", instance) or not 1 <= int(instance) <= 64:
-                    raise ValueError("Instance ID must be 01–64")
+                if not re.fullmatch(r"\d{1,5}", instance) or not 1 <= int(instance) <= 49985:
+                    raise ValueError("Instance ID must be 1–49985")
                 instance = f"{int(instance):02d}"
                 if action not in (
                     "create",
@@ -154,6 +203,20 @@ class Hosts:
                     if not data["erase_data"]:
                         args.append("--keep-data")
                 if action == "create":
+                    if type(data.get("runtime_ports", False)) is not bool:
+                        raise ValueError("runtime_ports must be boolean")
+                    if data.get("runtime_ports", False):
+                        args.append("--runtime-ports")
+                    if data.get("name"):
+                        args.extend(["--name", self.word(data["name"], "instance name")])
+                    if "image" in data:
+                        args.extend(["--image", self.word(data["image"], "system image")])
+                    if "disk" in data:
+                        if not isinstance(data["disk"], str) or not re.fullmatch(
+                            r"[1-9][0-9]{0,4}[GM]", data["disk"]
+                        ):
+                            raise ValueError("Disk must be a size such as 16G")
+                        args.extend(["--disk", data["disk"]])
                     profile = self.word(data.get("profile", "pixel_8_pro"), "hardware profile")
                     for key, default, low, high, flag in (
                         ("api", 35, 23, 99, "--api"),
@@ -166,6 +229,7 @@ class Hosts:
                         args.extend([flag, str(value)])
                     args.extend(["--profile", profile])
                     # Existing installed SDK images only: no unattended license acceptance/download.
+            self.attempted.add(ident)
             self.jobs[ident] = {"state": "running", "message": f"{action}: running on {ident}"}
             threading.Thread(target=self.worker, args=(ident, host, action, args), daemon=True).start()
         return {"message": f"{action} started; watch host status"}
@@ -188,11 +252,32 @@ class Hosts:
                     "health",
                 )
                 output = self.command(host, args, mutate=not readonly)
-            rows = json.loads(self.command(host, ["list", "--json"]))
-            if not isinstance(rows, list):
-                raise ValueError("Invalid host inventory response")
+            try:
+                raw = self.command(host, ["inventory", "--json"])
+            except ValueError as exc:
+                if "invalid choice" not in str(exc) or "inventory" not in str(exc):
+                    raise
+                raw = self.command(host, ["list", "--json"])
+            try:
+                rows = json.loads(raw)
+            except ValueError as exc:
+                raise ValueError("AndroidCtl inventory returned invalid JSON: " + raw[:1000]) from exc
+            self.validate_inventory(rows)
             with self.lock:
                 self.inventory[ident] = rows
+                self.observed[ident] = time.time()
+                self.cache_path.parent.mkdir(parents=True, exist_ok=True)
+                tmp = self.cache_path.with_suffix(".tmp")
+                tmp.write_text(
+                    json.dumps(
+                        {
+                            key: {"profile": self.profiles[key], "rows": value, "at": self.observed[key]}
+                            for key, value in self.inventory.items()
+                            if key in self.observed
+                        }
+                    )
+                )
+                os.replace(tmp, self.cache_path)
                 self.jobs[ident] = {
                     "state": "done",
                     "message": f"{action}: complete",
@@ -201,3 +286,10 @@ class Hosts:
         except (ValueError, KeyError, OSError, subprocess.SubprocessError) as exc:
             with self.lock:
                 self.jobs[ident] = {"state": "error", "message": str(exc), "output": output[-60000:]}
+
+    @staticmethod
+    def validate_inventory(rows):
+        if not isinstance(rows, list) or any(
+            not isinstance(row, dict) or not re.fullmatch(r"\d{1,5}", str(row.get("id", ""))) for row in rows
+        ):
+            raise ValueError("Invalid host inventory response")

@@ -4,6 +4,7 @@ import json
 import os
 import signal
 import time
+from dataclasses import replace
 from pathlib import Path
 
 from . import adb, avd, gpu, host, ports, systemd
@@ -28,6 +29,12 @@ def preflight(cfg, obj):
             raise Error("Configured system image is no longer installed.", 8)
         gpu.selection(obj)
         all_instances = instances(cfg)
+        reserved = {
+            p.name[9:-5]: json.loads(p.read_text()) for p in Path(cfg.runtime_root).glob("reserved-*.json")
+        }
+        if obj.runtime_ports:
+            console, local = ports.runtime_pair(obj, all_instances, cfg.adb_server_port, reserved)
+            obj = replace(obj, console_port=console, local_adb_port=local)
         ports.conflicts(obj, all_instances, cfg.adb_server_port)
         ports.available((obj.console_port, obj.local_adb_port, obj.remote_adb_port))
         marker = Path(cfg.runtime_root) / f"force-{obj.id}"
@@ -57,7 +64,10 @@ def preflight(cfg, obj):
         address = host.bind_address(cfg)
         ports.available([obj.remote_adb_port], address=address)
         atomic_write(Path(cfg.runtime_root) / f"endpoint-{obj.id}", address + "\n")
-        atomic_write(reservation(cfg, obj.id), json.dumps({"ram_mb": obj.ram_mb, "id": obj.id}))
+        atomic_write(
+            reservation(cfg, obj.id),
+            json.dumps({"ram_mb": obj.ram_mb, "id": obj.id, "console_port": obj.console_port}),
+        )
         print(f"Preflight OK; endpoint {address}:{obj.remote_adb_port}", flush=True)
 
 

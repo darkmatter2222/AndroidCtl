@@ -3,9 +3,9 @@
 set -Eeuo pipefail
 [[ $EUID -eq 0 ]] || { echo 'Run with sudo.' >&2; exit 1; }
 ident="${1:-01}"
-[[ "$ident" =~ ^[0-9]{1,2}$ ]] || { echo 'Expected instance ID 01–64.' >&2; exit 1; }
+[[ "$ident" =~ ^[0-9]{1,5}$ ]] || { echo 'Expected instance ID 1–59985.' >&2; exit 1; }
 printf -v ident '%02d' "$((10#$ident))"
-((10#$ident >= 1 && 10#$ident <= 64)) || exit 1
+((10#$ident >= 1 && 10#$ident <= 59985)) || exit 1
 CTL=/usr/local/bin/androidctl
 root=/etc/androidctl/nvidia-xorg
 unit=androidctl-nvidia-xorg.service

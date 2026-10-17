@@ -109,6 +109,72 @@ class HostTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.hosts.action({"host": "lab", "action": "shell", "instance": "01"})
 
+    def test_inventory_survives_restart_and_failed_refresh(self):
+        rows = [{"id": "01", "name": "phone", "state": "stopped"}]
+        with patch.object(self.hosts, "command", return_value=json.dumps(rows)):
+            self.hosts.worker("lab", self.hosts.profiles["lab"], "scan", [])
+        restored = Hosts(self.hosts.state)
+        self.assertEqual(restored.snapshot()[0]["instances"], rows)
+        with patch.object(restored, "command", side_effect=ValueError("Permission denied (publickey)")):
+            restored.worker("lab", restored.profiles["lab"], "scan", [])
+        view = restored.snapshot()[0]
+        self.assertEqual(view["instances"], rows)
+        self.assertTrue(view["inventory_known"])
+        self.assertTrue(view["inventory_stale"])
+
+    def test_first_load_scans_once_without_creating_anything(self):
+        with patch("androidctl.web_hosts.threading.Thread") as thread:
+            self.hosts.snapshot(auto_scan=True)
+            self.hosts.snapshot(auto_scan=True)
+        self.assertEqual(thread.call_count, 1)
+        self.assertEqual(thread.call_args.kwargs["args"][2], "scan")
+
+    def test_old_server_inventory_fallback_is_specific(self):
+        with patch.object(
+            self.hosts,
+            "command",
+            side_effect=[ValueError("invalid choice: 'inventory'"), '[{"id":"01","state":"stopped"}]'],
+        ) as command:
+            self.hosts.worker("lab", self.hosts.profiles["lab"], "scan", [])
+        self.assertEqual(command.call_args_list[0].args[1], ["inventory", "--json"])
+        self.assertEqual(command.call_args_list[1].args[1], ["list", "--json"])
+        self.assertEqual(self.hosts.jobs["lab"]["state"], "done")
+        with patch.object(self.hosts, "command", side_effect=ValueError("Permission denied")) as command:
+            self.hosts.worker("lab", self.hosts.profiles["lab"], "scan", [])
+        self.assertEqual(command.call_count, 1)
+
+    def test_invalid_inventory_does_not_erase_previous_rows(self):
+        rows = list(self.hosts.inventory["lab"])
+        with patch.object(self.hosts, "command", return_value="login banner, not JSON"):
+            self.hosts.worker("lab", self.hosts.profiles["lab"], "scan", [])
+        self.assertEqual(self.hosts.inventory["lab"], rows)
+        self.assertIn("invalid JSON", self.hosts.jobs["lab"]["message"])
+
+    def test_catalog_create_supports_large_id_and_runtime_ports(self):
+        with patch("androidctl.web_hosts.threading.Thread") as thread:
+            self.hosts.action(
+                {
+                    "host": "lab",
+                    "action": "create",
+                    "instance": "200",
+                    "runtime_ports": True,
+                    "disk": "16G",
+                    "image": "google_apis",
+                }
+            )
+        args = thread.call_args.kwargs["args"][-1]
+        self.assertEqual(args[:2], ["create", "200"])
+        self.assertIn("--runtime-ports", args)
+        self.assertIn("--disk", args)
+
+    def test_capacity_only_sets_bounded_admission_limit(self):
+        with patch("androidctl.web_hosts.threading.Thread") as thread:
+            self.hosts.action({"host": "lab", "action": "capacity", "maximum": 3})
+        self.assertEqual(thread.call_args.kwargs["args"][-1], ["config", "set", "max_running_instances", "3"])
+        self.hosts.jobs.clear()
+        with self.assertRaises(ValueError):
+            self.hosts.action({"host": "lab", "action": "capacity", "maximum": 0})
+
 
 class NvidiaTests(unittest.TestCase):
     def setUp(self):

@@ -4,6 +4,7 @@ import socket
 
 from . import adb, systemd
 from .errors import Error
+from .config import runtime_instance
 from .host import bind_address
 
 
@@ -22,6 +23,7 @@ def classify(active, boot, proxy):
 
 
 def status(cfg, instance):
+    instance = runtime_instance(cfg, instance)
     props = systemd.properties(instance.id)
     boot = False
     if props.get("ActiveState") in ("active", "activating"):
@@ -66,4 +68,31 @@ def status(cfg, instance):
             ).stdout.strip()
         except Error:
             result["android_release"] = "unknown"
+    return result
+
+
+def inventory(cfg, instance):
+    """Registered storage and service state without waiting on guest ADB."""
+    instance = runtime_instance(cfg, instance)
+    props = systemd.properties(instance.id)
+    active = props.get("ActiveState", "unknown")
+    states = {
+        "active": "running",
+        "inactive": "stopped",
+        "failed": "failed",
+        "activating": "starting",
+        "deactivating": "stopping",
+    }
+    result = asdict(instance)
+    result.update(
+        state=states.get(active, "unknown"),
+        health="not probed",
+        service_result=props.get("Result", ""),
+        pid=int(props.get("MainPID", "0")),
+        avd=f"{cfg.avd_root}/{instance.name}.avd",
+        active_since=props.get("ActiveEnterTimestamp", ""),
+    )
+    if instance.runtime_ports and not (Path(cfg.runtime_root) / f"reserved-{instance.id}.json").exists():
+        result["console_port"] = None
+        result["local_adb_port"] = None
     return result

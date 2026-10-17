@@ -43,13 +43,43 @@ def available(ports, address="0.0.0.0"):
                 ) from exc
 
 
+def reserved_ports(instance):
+    # Catalog devices reserve only their stable public endpoint while stopped.
+    return (
+        {instance.remote_adb_port}
+        if instance.runtime_ports
+        else {instance.console_port, instance.local_adb_port, instance.remote_adb_port}
+    )
+
+
 def conflicts(instance, others, adb_server_port):
-    chosen = {instance.console_port, instance.local_adb_port, instance.remote_adb_port}
+    chosen = reserved_ports(instance)
     if adb_server_port in chosen:
         raise Error(f"Port conflicts with managed ADB server {adb_server_port}.", 6)
     for other in others:
         if other.id == instance.id:
             continue
-        overlap = chosen & {other.console_port, other.local_adb_port, other.remote_adb_port}
+        overlap = chosen & reserved_ports(other)
         if overlap:
             raise Error(f"Ports {sorted(overlap)} reserved by instance {other.id}.", 6)
+
+
+def runtime_pair(instance, others, adb_server_port, reservations):
+    """Choose a free pair under the caller's manager lock; legacy pairs stay fixed."""
+    blocked = {adb_server_port, instance.remote_adb_port}
+    for other in others:
+        if other.id != instance.id:
+            blocked.update(reserved_ports(other))
+    for ident, record in reservations.items():
+        if ident != instance.id and "console_port" in record:
+            port = int(record["console_port"])
+            blocked.update((port, port + 1))
+    for console in range(5554, 5683, 2):
+        if console in blocked or console + 1 in blocked:
+            continue
+        try:
+            available((console, console + 1))
+        except Error:
+            continue
+        return console, console + 1
+    raise Error("No emulator runtime port pair is available. Stop another instance or free a listener.", 6)

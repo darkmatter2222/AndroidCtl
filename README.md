@@ -300,7 +300,7 @@ androidctl list --json
 
 The official profile specifies emulator characteristics. It does **not** reproduce Pixel Tensor hardware, modem/baseband, secure hardware, hardware-backed attestation, certification, or Play Integrity. A logical instance ID is not an IMEI, Android ID, advertising ID, or secure hardware identity.
 
-## Static ports
+## Legacy fixed ports
 
 | ID | Console (loopback) | Local ADB | Remote/proxy ADB |
 |---|---:|---:|---:|
@@ -310,7 +310,7 @@ The official profile specifies emulator characteristics. It does **not** reprodu
 | 04 | 5560 | 5561 | 15554 |
 | 10 | 5572 | 5573 | 15560 |
 
-Console = `5554 + 2 × (ID − 1)`; local ADB = console + 1; proxy = `15550 + ID`. Ports are saved at creation, checked against every configured device and existing listeners, and never reassigned automatically. Supported console ports are even values from 5554 through 5682. Advanced overrides and range details: [ports](docs/ports.md).
+In fixed-port mode (CLI default), console = `5554 + 2 × (ID − 1)`; local ADB = console + 1; proxy = `15550 + ID`. Ports are saved at creation, checked against every configured device and existing listeners, and never reassigned automatically. Supported console ports are even values from 5554 through 5682. Advanced overrides and range details: [ports](docs/ports.md).
 
 ## Connect from Windows with ADB and scrcpy
 
@@ -453,3 +453,18 @@ If these tools help you, **star the repositories you use**: [AndroidCtl](https:/
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy_Me_a_Coffee-Support_development-FFDD00?logo=buymeacoffee&logoColor=000)](https://buymeacoffee.com/j6oiubzfnh)
 
 Bug reports, reproducible evidence and documentation improvements are welcome too.
+
+
+### Persistent instance catalog
+
+The local web app now opens an instance catalog: select a server, inspect all
+reserved Android identities (including stopped devices), and start, stop or power
+cycle them without recreating their storage. Search, state filters and pagination
+support large inventories. Open only the screens you need in the separate screen
+workspace, with scrcpy, volume/mute and screen-power controls.
+
+New web reservations allocate internal emulator ports only while running, retaining
+a stable public ADB endpoint and persistent AVD. Legacy fixed-port instances remain
+unchanged. See [catalog, setup and limits](docs/web-workbench.md) and
+[runtime port allocation](docs/ports.md). Upgrade the Linux host as well as the
+controller checkout before reserving new instances.

@@ -1,8 +1,9 @@
 import configparser
 import io
+import json
 import ipaddress
 import re
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
 
 from .errors import Error
@@ -127,6 +128,7 @@ class Instance:
     dri_prime: str = "auto"
     gpu_pci: str = ""
     autostart: bool = False
+    runtime_ports: bool = False
     display_scale: int = 0
     native_pixel_display: bool = False
     disable_guest_vulkan: bool = False
@@ -222,4 +224,19 @@ def get_instance(cfg, value):
     obj = load(Path(cfg.instance_root) / f"{ident}.conf", Instance, "instance", required=True)
     if obj.id != ident:
         raise Error("Configuration ID does not match its filename.")
+    return runtime_instance(cfg, obj)
+
+
+def runtime_instance(cfg, obj):
+    if not obj.runtime_ports:
+        return obj
+    path = Path(cfg.runtime_root) / f"reserved-{obj.id}.json"
+    try:
+        record = json.loads(path.read_text())
+    except FileNotFoundError:
+        return obj
+    if "console_port" in record:
+        obj = replace(
+            obj, console_port=int(record["console_port"]), local_adb_port=int(record["console_port"]) + 1
+        ).validate()
     return obj

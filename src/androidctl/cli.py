@@ -2,9 +2,10 @@ import argparse
 import json
 import sys
 from dataclasses import asdict
+from pathlib import Path
 
 from . import __version__, adb, fleet, gpu, health, host, instance, service, systemd
-from .config import Config, convert, get_instance, instances, load, save
+from .config import Config, convert, get_instance, instances, load, runtime_instance, save
 from .errors import Error
 from .sdk import SDK
 from .util import lock, require_root, run
@@ -38,7 +39,7 @@ def parser():
     f.add_parser("watch")
     f.add_parser("_monitor", help=argparse.SUPPRESS)
     sub.add_parser("doctor").add_argument("--json", action="store_true")
-    for name in ("list", "ports", "profiles"):
+    for name in ("list", "ports", "profiles", "inventory"):
         sub.add_parser(name).add_argument("--json", action="store_true")
     for name in ("status", "info", "health", "adb-endpoint"):
         s = sub.add_parser(name)
@@ -53,6 +54,11 @@ def parser():
     c.add_argument("--architecture", default="x86_64")
     c.add_argument("--install-image", action="store_true")
     c.add_argument("--start", action="store_true")
+    c.add_argument(
+        "--runtime-ports",
+        action="store_true",
+        help="Reserve a stable endpoint; allocate internal ports only while running",
+    )
     c.add_argument("--display-scale", type=int, choices=(25, 33, 50, 75, 100), default=0)
     for name in ("start", "stop", "restart", "enable", "disable", "delete", "logs", "shell", "adb"):
         s = sub.add_parser(name)
@@ -219,18 +225,25 @@ def main(argv=None):
                         if package not in sdk.images():
                             raise Error("Requested image is unavailable; inspect androidctl sdk images.", 8)
                         sdk.install([package])
-        elif cmd in ("list", "ports") or (cmd == "status" and args.id is None):
+        elif cmd in ("list", "ports", "inventory") or (cmd == "status" and args.id is None):
             rows = []
             for obj in instances(cfg):
                 if cmd == "ports":
+                    obj = runtime_instance(cfg, obj)
                     rows.append(
                         {
-                            k: getattr(obj, k)
+                            k: (
+                                None
+                                if obj.runtime_ports
+                                and k in ("console_port", "local_adb_port")
+                                and not (Path(cfg.runtime_root) / f"reserved-{obj.id}.json").exists()
+                                else getattr(obj, k)
+                            )
                             for k in ("id", "console_port", "local_adb_port", "remote_adb_port")
                         }
                     )
                 else:
-                    view = health.status(cfg, obj)
+                    view = health.inventory(cfg, obj) if cmd == "inventory" else health.status(cfg, obj)
                     rows.append(
                         view
                         if args.json
@@ -242,7 +255,7 @@ def main(argv=None):
                                 "api",
                                 "state",
                                 "health",
-                                "endpoint",
+                                *(() if cmd == "inventory" else ("endpoint",)),
                                 "cpu_cores",
                                 "ram_mb",
                             )

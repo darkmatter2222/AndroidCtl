@@ -1,176 +1,199 @@
-# Local device workbench
+# AndroidCtl catalog and screen workspace
 
-A compact dark browser utility for connected USB/emulator/network ADB devices. Saved endpoints remain visible when offline. Drag tile headers to reorder (saved per browser), adjust tile width, focus a screen, pause previews, inspect Android properties/battery/display, and launch native scrcpy. Each tile displays transport status and frame timing/size. With an explicitly configured AndroidCtl host, it also starts/stops/creates/deletes managed instances.
+The catalog models an instance as a persistent reservation: server + instance ID,
+AVD storage, Android image, hardware configuration, default resolution, and stable
+public ADB port. Running Android is a state of that reservation. Stopping or power
+cycling it never calls create and does not remove its storage.
 
-## Start on Windows, Linux or macOS
+## Launch and update
 
-Install Python 3.10+, Android platform-tools (`adb`), and optionally scrcpy on the computer running the utility. From the repository:
+Requires Python 3.10+, ADB, and optionally native scrcpy on the controller.
+Run start-web.bat on Windows or ./start-web.sh on Linux/macOS from the checkout.
+Installed alternatives are androidctl-web and python -m androidctl.web. Linux also
+supports androidctl web. No Node build or third-party Python runtime dependency.
 
-```sh
-python -m pip install -e .
-androidctl-web
-```
+Options include --port, --adb, --scrcpy, --adb-port, --state, and --no-browser.
+Port 8765 is preferred; if the default is blocked or occupied the OS chooses an
+available port. Explicit ports are honored. --port 0 always selects a free port.
+Desktop ADB defaults to 5037; the managed Linux host's ADB server uses 5038.
 
-Quick checkout launchers: double-click `start-web.bat` on Windows or run `./start-web.sh` on Linux/macOS. Both use the checkout directly without a pip installation.
+Pull updates on the controller and upgrade AndroidCtl on each Linux host before
+creating catalog reservations. upgrade.sh requires existing emulators to be stopped.
+Upgrade retains AVD storage and registered instance configurations.
 
-Equivalent portable command: `python -m androidctl.web`. On the Linux host manager, `androidctl web` also works. No Node build or third-party Python runtime dependencies are needed. Ctrl+C stops the HTTP service; devices and already-open native scrcpy windows remain running.
+The browser URL includes a per-process token. Reopen the printed URL after restarting
+the server. Tokens are held in session storage, removed from the URL, and required
+for API requests. The web server binds only 127.0.0.1 and validates Host and Origin.
+Use a normal desktop account, not root. Ctrl+C stops the web service, not Android.
 
-```sh
-androidctl-web --port 8765 --adb /path/to/adb --scrcpy /path/to/scrcpy
-androidctl-web --adb-port 5038 --adb /opt/android-sdk/platform-tools/adb
-androidctl-web --no-browser
-```
+## Server connection and inventory
 
-The web listener prefers port 8765. If that default is blocked/reserved or in use, it automatically asks the OS for an available port and opens the actual URL. `--port 0` always requests automatic selection. An explicitly specified nonzero port is honored without fallback. Windows `WinError 10013` at bind can indicate a reserved or exclusively held port; it does not mean the app needs administrator privileges. If even `--port 0` fails, check endpoint security policy rather than changing firewall/port reservations blindly.
+Add server asks separately for a label, server IP/hostname, SSH username and SSH
+port. The server list displays both the actual SSH target and the ADB host address.
+SSH key authentication and an already verified host key are required. Lifecycle
+operations run sudo -n androidctl; configure suitable noninteractive sudo access
+on the host. The app never accepts arbitrary shell commands, edits sudoers, or
+silently trusts SSH host keys. Connection help shows terminal checks for the
+actual saved target. SSH aliases and local profiles already saved through the API
+remain supported, though the wizard creates explicit user@host targets.
 
-Desktop ADB defaults to 5037. AndroidCtl's dedicated managed host server uses 5038; choose it explicitly. Existing devices on the selected ADB server are discovered automatically. To use remote configured fleet devices, run `androidctl fleet screen` on the host and add the reported endpoints here. This version does not automatically import OpenCode aliases or host instance configuration.
+The first host-list request automatically scans saved servers once per web process.
+Refresh server or Scan instances updates changes made outside the app. The light
+androidctl inventory --json command reads configuration and systemd state without
+guest ADB calls. Older servers fall back to list --json only if inventory is an
+unsupported command. Scans have a 90-second command deadline.
 
-The command opens the browser and prints a URL containing a per-process session token. Reopen that complete URL after a restart; a stale tab's previous token will be rejected. The browser moves the token into session storage and removes it from the address bar. The service binds only to 127.0.0.1, validates Host/Origin, and requires the token for all API requests. No CORS, arbitrary shell endpoint, or public bind option is provided. Run as your normal desktop user, not root.
+Successful inventory persists in web-hosts-inventory.json alongside web-hosts.json.
+It is bound to the exact saved server profile. Failed scans keep previous rows and
+show their timestamp and stale status. “Inventory unavailable” is distinct from a
+successfully scanned server with no registered instances. Actual errors are shown:
+SSH login, host-key, command availability and malformed-output errors are not all
+reported as an incorrect IP address.
 
-## Connect and control
+## Catalog
 
-- USB: enable USB debugging and approve the host's RSA prompt on the phone. Unauthorized/offline states appear in the grid.
-- Network: enter `hostname:port`, optionally a name, **Save device**, then **Connect**. Saving alone never initiates a connection. Names/endpoints persist in `~/.androidctl/web-devices.json` (`--state` overrides this).
-- Android wireless debugging: enter the pairing endpoint and six-digit code, choose **Pair**, then change to the separate debugging endpoint and choose **Connect**. Codes are never persisted.
-- Browser preview: PNG screenshot polling every 1, 2 or 5 seconds, with only one outstanding request per tile. The page pauses capture when hidden; at most two captures and eight total ADB subprocesses run concurrently. Actual cadence depends on device/network/capture latency. This is not a 30/60 FPS video stream and has no audio.
-- Turn **Input ON** for a tile to send taps, drags/swipes, Back, Home or Apps. Input coordinates map to the captured image's native pixel dimensions. Rotation between capture and input can invalidate coordinates: wait for the next frame. No keyboard text entry or multitouch in this version.
-- **scrcpy ↗** opens a native video/control window on the machine running the Python service. It requires a desktop session and scrcpy on PATH. A running viewer is reused per serial. Launch reporting does not prove successful video initialization; inspect the terminal for scrcpy errors.
-- **Inspect** reads properties, battery and display dimensions on demand. **Disconnect** saves the device automatically, stops preview requests, clears the stale frame, closes a scrcpy viewer launched by this server, and keeps a “disconnected” tile with **Connect** available. Network devices are disconnected from the shared ADB server; this also affects agents using that transport. USB/emulator serials without a network endpoint are detached from the workbench only, because ADB cannot disconnect one USB transport. They remain available to other tools. Workbench-only detach state lasts until reconnect or server restart.
-- **Pause tile** stops only this browser tile's preview traffic, keeping ADB available for agents; **Resume tile** restarts capture. Global pause still works. Disconnect/pause does not stop Android or release its VM RAM/CPU.
-- **Forget** removes a saved entry, without disconnecting it; connected devices remain discoverable.
+Select a server in the sidebar. The main view shows:
+- Reserved, running/starting, and stopped counts.
+- Search by name, ID, profile, or public port.
+- State filtering, sorting, and 25-row pagination.
+- Persistent ID/name, Android API, service state, public endpoint, CPU/RAM allocation
+  and default display scale.
+- A selected-instance panel with storage path, disk allocation, autostart, service
+  result, health, and lifecycle controls.
 
-### Restart and resolution
+Running means systemd reports an active service; Health probes Android readiness.
+Disk allocation is configured capacity, not measured host disk usage. Cached rows
+are historical: the Linux host validates each mutation against actual state.
 
-Each online tile reads its actual physical size/density once and populates a dropdown. **Read resolutions** refreshes these values manually. Options are **Keep current**, **Native default**, and 75%, 50%, 33%, 25% of native dimensions (rounded to even pixels). Density scales proportionally, with a minimum of 72 dpi. For a native 1344×2992 / 480 dpi device, 50% gives 672×1496 / 240 dpi and 25% gives 336×748 / 120 dpi. Native default resets both overrides; it is distinct from an already-overridden current size.
+Reserve Android creates a stopped AVD and stable endpoint. It suggests an unused
+ID and refuses an existing ID both in the UI and on the host. Choose name, resource
+preset, default resolution, and advanced image/profile/API/disk settings. Required
+SDK images must already be installed; there is no unattended license acceptance.
 
-**Apply now** changes and reads back size/density without rebooting. **Restart** asks for confirmation, reboots only the selected Android guest, waits for a changed boot ID and `sys.boot_completed=1`, then applies and verifies the selected profile. The tile reports restart progress, completion or error and pauses screenshots during the job. Keep the Python server running until completion. The 240-second boot deadline is approximate because individual ADB commands can take up to 15 seconds. Network reconnection uses the same exact endpoint; wireless debugging may change its port after reboot, requiring manual reconnection. This does not restart the host systemd service and cannot recover an emulator that is already offline/crashed.
+Start existing instance boots the selected reservation. Stop shuts Android down and
+retains the reservation and storage. Power cycle uses AndroidCtl's graceful
+stop/start operation on the same ID. No new AVD is created.
 
-AndroidCtl host startup currently resets `wm` overrides. Applying after Android boot addresses guest restarts initiated here, but a later host/service restart or external display policy may reset the setting again. These are Android logical display overrides, not edits to the AVD hardware profile. If one display command fails, a partial override can remain; choose Native default / Apply now to recover. Reboot success is reported only after display readback matches.
+Delete is separate: it requires DELETE followed by the exact instance ID and an
+explicit keep/erase data choice. Keep retains unregistered AVD files for manual
+recovery. Erase permanently deletes the AVD data. A separately saved ADB connection
+can remain offline after deletion; Forget removes that connection.
 
-Lower resolution reduces pixels to render/capture/transfer, but does not guarantee smooth video: browser previews still use screenshot polling. Pause unused tiles or disconnect unused network transports to reduce capture work. Coordinate with agents before rebooting or changing resolution, since old screenshot coordinates become invalid.
+## Large catalogs and runtime ports
 
-Pause or coordinate with any automation input owner before manual actions. The workbench does not enforce locks shared with android_automation agents.
+New web-created reservations pass --runtime-ports. Example:
 
-## OpenCode and other agents
+    sudo androidctl create 200 --runtime-ports --display-scale 50
 
-Use `.agents/skills/androidctl-workbench/SKILL.md` as the repository workflow. Ask OpenCode: “Start the AndroidCtl web workbench with `python -m androidctl.web --no-browser` and give me its local URL.” Existing `/androidctl` desktop plugin commands are unchanged. Keep the service running in an owned terminal/process session.
+The stable public endpoint remains remote_adb_base_port + ID (default instance 200:
+15750). Only internal emulator console/ADB pairs are allocated at service preflight
+under the manager lock. The allocation is recorded in the runtime reservation and
+used by launch, postboot, health, shutdown and the public-port proxy. Stop releases
+that runtime reservation; instance configuration, storage and public port remain.
 
-API contract (token in `X-AndroidCtl-Token`, no query-string tokens):
+This allows hundreds of saved catalog identities without consuming hundreds of
+simultaneous emulator port pairs. Tests cover 200 saved identities and three runtime
+allocations; this is not a claim of a 200-emulator hardware benchmark.
 
-| Method / path | Payload or result |
-|---|---|
-| GET `/api/devices` | `{devices: [{serial, name, state, details?}]}` |
-| GET `/api/frame?serial=...` | PNG bytes; URL-encode exact serial |
-| POST `/api/action` | JSON object with `action`, `serial`, and fields below |
+Legacy instances keep fixed internal port reservations, even when stopped. Their
+pairs are excluded from the runtime pool; they are not automatically migrated.
+The supported pool remains 5554–5682 (65 even console pairs). Actual concurrency
+is additionally bounded by max_running_instances, available memory, CPU and GPU.
+A host whose legacy reservations occupy every pair has no pool slots remaining.
 
-Additional actions: `display` returns native/current values and profile definitions; `resolution` applies a `profile` (`current`, `default`, `75`, `50`, `33`, `25`); `restart` accepts the same `profile` and returns immediately. Poll `/api/devices` for `operation.state` (`running`, `done`, `error`) and `operation.message`. During restart the device state is `restarting` and input/frame requests are rejected.
+Set the new concurrency limit under server diagnostics while all managed Android
+instances are stopped. The field proposes a new value, not a reported current
+limit; Server configuration shows the current setting. Saving a higher limit does
+not bypass RAM/CPU admission checks or start any instances.
 
-Actions: `save` (`name`), `forget`, `connect`, `disconnect`, `pair` (`code`), `info`, `scrcpy`, `key` (`key`: 3, 4, 24, 25, 26, 82, 187), `tap` (`points`: [x,y]), `swipe` (`points`: [x1,y1,x2,y2], fixed 300 ms). Failures return `{error: message}` and a non-2xx status. There is deliberately no arbitrary shell execution API. Input ON is a browser safeguard, not an API authorization boundary: token holders can control devices.
+## Screen workspace and device controls
 
-## Deployment and validation limits
+Show screen connects the selected running reservation over its public ADB endpoint
+and opens its tile. Open scrcpy connects and opens native video/control on the
+controller. A native desktop session and installed scrcpy are required.
 
-This release targets a local desktop. No container recipe is provided: native scrcpy requires a desktop, USB requires explicit host-device access, and publishing a container port would undermine the loopback security boundary. Use a trusted remote desktop for server-hosted usage until authenticated remote hosting is designed.
+Catalog entries do not create preview tiles until opened. Captures only run in the
+screen workspace, for visible online tiles, while the page is visible. At most two
+captures and eight total ADB subprocesses run concurrently. Browser previews are
+periodic PNG screenshots (1/2/5 seconds), not video. Use scrcpy for smooth video.
+Actual Android/GPU performance is separate from browser preview cadence.
 
-Automated tests cover discovery, persistence, exact serial forwarding, input validation and HTTP authentication/origin boundaries. Hardware acceptance: connect two devices, verify both previews, reorder/focus, tap/swipe in a harmless app, rotate, unplug/reconnect, pair wirelessly, launch scrcpy, restart the utility, and confirm saved endpoints/layout survive. Windows/macOS live execution, physical devices, emulator graphics and live OpenCode integration still require host validation.
+Controls include volume up/down, mute, screen power, Back/Home/Apps, pointer taps
+and swipes, inspection, resolution overrides, guest restart, and disconnect.
+Screen power toggles display sleep/wake; it is not a VM shutdown. Use catalog Stop
+to shut down Android while preserving its reservation. Enable Input ON for pointer
+and navigation input. Volume/power are explicit button actions. Screen rotation
+can invalidate coordinates until the next preview arrives.
 
-Research: [official scrcpy](https://github.com/Genymobile/scrcpy), [Tango browser scrcpy client](https://tangoadb.dev/scrcpy/), [ws-scrcpy](https://github.com/NetrisTV/ws-scrcpy). A future browser video transport can replace polling without changing device discovery or the control API. Screenshot polling was chosen here to keep installation portable and dependency-free; it is not equivalent to these video clients.
+Disconnect stops previews, clears stale images, closes app-owned scrcpy and retains
+the connection. Network disconnect affects other clients sharing that ADB transport.
+USB disconnect detaches this workbench; reconnect requires a present authorized
+device. Physical phones have Forget, not virtual-instance deletion.
 
+Connect phone/device provides network IP and port fields, USB instructions, and
+wireless pairing with separate pairing/debugging ports. Pairing codes are not saved.
 
-## Managed hosts and full instance lifecycle
+## Resolution and other controls
 
-Expand **Android instance hosts**. Save a nickname (for example `databrick`), SSH target (`user@hostname` or an existing SSH config alias), SSH port and the reachable ADB hostname/IP. Use `local` only when the web server is running on the Linux AndroidCtl host. No credentials are stored. SSH runs with BatchMode and strict host-key checking: establish and verify normal SSH connectivity first. Install/upgrade AndroidCtl on that host separately. Mutations call `sudo -n androidctl` and need an existing suitable noninteractive sudo policy; the utility does not edit sudoers or open interactive password prompts.
+Default resolution is stored on the Linux host per instance. New reservations default
+to 50%; the browser remembers the last creation choice. Choices: 25, 33, 50, 75,
+100 percent. Dimensions are derived from physical size; density scales with a
+minimum 72 dpi. Pixel 8 Pro at 50% is 672 × 1496 at 240 dpi. Native resets overrides.
 
-**Scan instances** queries `androidctl list --json`, including stopped VMs. Each managed tile shows host/instance ID, service state, renderer and allocated RAM/vCPUs. These tiles survive ADB disconnects because they come from host inventory. **Scan ADB** refreshes the current ADB server's transports; it does not scan your LAN or find powered-off machines. Host inventory is refreshed at the end of each host operation; use Scan instances for changes made elsewhere. On web-server restart, scan saved hosts again to repopulate managed-instance metadata.
+The policy applies immediately when running and after each service boot; guest
+reboots retain Android's wm overrides. Existing instances preserve old behavior
+until a policy is selected. Apply now in a screen tile is a temporary override;
+the next service boot restores its saved policy. If applying fails, the policy
+remains saved and the operation reports the error.
 
-- **Start instance** starts the selected persistent VM through AndroidCtl; then Connect opens its ADB transport. It does not silently start every VM.
-- **Stop instance** confirms before completely stopping its emulator service, freeing its VM resources while preserving userdata. This differs from Disconnect or Pause tile.
-- **Create instance** takes an unused ID 01–64, hardware profile, Android API, RAM MiB and CPU cores. It uses an already installed SDK image and leaves the new VM stopped. There is no unattended SDK download or license acceptance. Install required images on the host first.
-- **Delete instance** requires typing `DELETE ID`, then explicitly choosing whether to erase userdata or preserve it. This invokes the host's stop-and-delete lifecycle logic. Preserved data prevents blindly recreating the same AVD name; see the host backup/restore guide. A previously saved ADB endpoint can remain as a disconnected tile; Forget removes that endpoint.
-- **Set renderer (stopped)** selects host GPU or software SwANGLE. Stop the VM first. The host renderer command selects one NVIDIA GPU, or one Mesa GPU if no NVIDIA is present. Multi-NVIDIA hosts are not supported by the experimental NVIDIA path.
-- **Performance report** runs the new read-only host report and displays the result under host status. See [RTX 3090 trial](gpu.md#rtx-3090-performance-trial-existing-instances). It does not stop models or edit drivers.
+Renderer changes require a stopped instance. Host GPU and software SwANGLE are
+available; GPU/display setup must already work on the server. The catalog does not
+install drivers or unload GPU models. Autostart, logs (last 30 minutes), instance
+inspection, health, performance, doctor, GPU inventory, ports, profiles, SDK
+status/images and server configuration are also available.
 
-Only one management job runs per host at a time. Status and bounded command output appear in the host panel. Keep the server open during jobs. A command timeout or lost SSH session is not proof that the remote operation stopped: scan the host before retrying. Creation/deletion and renderer changes have not been tested on a real host by this development environment.
+## CLI-to-UI map
 
-Host profiles persist alongside the device file as `web-hosts.json`. `GET /api/hosts` returns profiles, cached inventory and operation state. `POST /api/host-action` accepts: `save` (`id`, `target`, `endpoint_host`, `port`); `scan`/`diagnostics` (`host`); `start`/`stop` (`host`, `instance`); `create` (plus `profile`, `api`, `ram`, `cpus`); `renderer` (plus `gpu`: `host` or `swangle`); `delete` (plus exact `confirm`: `DELETE 01`, and boolean `erase_data`). The same local session token and origin checks apply. The remote command is built from allowlisted fields, not arbitrary shell text.
+| CLI capability | UI |
+| --- | --- |
+| inventory/list | Catalog, with saved state on scan failure |
+| create | Reserve Android |
+| start/stop/restart | Selected instance: Start, Stop, Power cycle |
+| enable/disable | Autostart controls |
+| delete | Typed deletion dialog |
+| display | Default resolution |
+| renderer | Renderer selection, stopped instances |
+| info/health/logs | Selected instance |
+| performance/doctor/gpu list/ports/profiles | Server diagnostics |
+| sdk status/images, config show | Server diagnostics |
+| config set max_running_instances | Save concurrency limit |
+| ADB keys, tap/swipe, connect/disconnect | Screen workspace |
+| scrcpy | Open scrcpy / Open live view |
+| Interactive shells, fleet setup, SDK mutations, arbitrary config edits | CLI |
 
-Browser capture concurrency is capped at two with separate capacity from input/control work, so a large grid cannot fill every ADB slot with screenshots. This reduces capture contention; it is not a guarantee that the Android guest itself will respond quickly.
+## Exports and agent use
 
+Export connection JSON includes configured hosts, catalog/ADB endpoints and names,
+and preferred creation scale. It excludes session tokens, SSH keys and operation
+logs. This is a portable manifest for agents/manual restoration, not automatic import.
 
-## Guided workspace
+Export commands downloads commented Bash/Git Bash SSH, lifecycle, display, logging,
+ADB and scrcpy examples. Executing the file as-is makes no changes.
 
-The toolbar starts with tasks rather than connection configuration fields:
+Agents can start the portable web command or use the documented CLI directly.
+Read .agents/skills/androidctl-workbench/SKILL.md for the existing harness workflow.
+GET /api/devices and /api/hosts provide device and host inventory. POST /api/action
+handles allowlisted ADB operations; POST /api/host-action handles allowlisted host
+jobs. Authentication and origin checks apply to all API operations. Only one host
+job runs at a time; keep the web process open until completion.
 
-- **Add device** guides network, USB, or wireless pairing setup. Network IP and
-  debugging port are separate fields. Pairing asks for its separate pairing port.
-  Review the assembled address before connecting. A failed connection retains the
-  saved tile and displays the error in the wizard.
-- **Servers → Set up server** asks separately for a server IP, SSH username, and
-  SSH port. It assembles the SSH target, saves the profile, and queues a scan.
-  The server panel shows progress, actionable errors, and expandable raw details.
-  **Edit connection** repairs an existing profile under the same server name.
-  Existing trusted host keys, SSH key authentication, and the documented
-  passwordless sudo setup are still required; the wizard does not install them.
-- **Create Android** selects a server, unused instance number, and resource preset.
-  Hardware profile and API level live under advanced image settings. Review before
-  creating; watch the server panel for completion. Scan the server first and
-  install the required SDK image before creation.
-- Tiles keep connection, preview, live view, and navigation controls available.
-  **Device settings** contains inspection, resolution, reboot, and forgetting a
-  connection. **Instance settings** contains renderer selection and deletion.
-  Disconnect retains a tile; stopping a managed instance shuts Android down.
-  Open live view launches native scrcpy; browser previews remain screenshots.
+## Verification and limits
 
-Server setup reports a queued test, not a successful login. Consult the resulting
-server status before attempting lifecycle actions.
-
-## Persistent resolution, deletion, and exports
-
-Upgrade the Linux server installation as well as pulling the Windows checkout.
-The CLI now supports `sudo androidctl display 01 --scale 50` and creation with
-`sudo androidctl create 02 --display-scale 50`.
-
-Choose 25, 33, 50, 75, or 100 percent. Dimensions scale from the physical display;
-density scales proportionally (minimum 72 dpi). Existing instances retain their
-behavior until a policy is chosen. New web-created instances default to 50%; the
-browser remembers the last creation choice. Pixel 8 Pro at 50% is 672 × 1496,
-240 dpi. The policy is stored in instance configuration, applied immediately when
-running, and reapplied after each service boot. Guest reboots retain Android's
-wm overrides. 100% clears size and density overrides.
-
-Use **Instance settings → Default resolution** for existing managed instances.
-Device settings' Apply now remains a temporary override; the next service start
-restores the saved policy. If applying fails, the policy remains saved; inspect
-logs and retry.
-
-**Delete…** appears directly on managed tiles. It identifies the server/instance
-and requires typing DELETE followed by the instance ID. Keep data is the default:
-the instance is deregistered but its AVD files remain for manual recovery. Erase
-permanently removes apps, accounts, and userdata. A separately saved ADB connection
-may remain offline; Forget removes that connection. Physical phones only have
-Forget, not virtual-instance deletion.
-
-Instance settings also offer restart, enable/disable autostart, recent logs
-(30 minutes), health, and instance information. Servers offer performance, doctor,
-GPU inventory, ports, profiles, SDK status/images, and read-only configuration
-under Diagnostics and configuration.
-
-**Export** downloads connection JSON (host profiles, device addresses/names, and
-preferred creation scale) without session tokens, SSH keys, or operation logs.
-This is a manifest for agents/manual restoration; automatic import is not included.
-Command exports contain SSH-wrapped lifecycle/display/log commands and ADB/scrcpy
-commands for current inventory. They use Bash/Git Bash syntax and are commented
-out so executing the file does not trigger bulk changes. Search filters tiles by
-name, address, state, or server.
-
-Interactive shells, SDK installation/update/license acceptance, fleet setup, and
-arbitrary configuration edits remain CLI operations. The web API does not accept
-arbitrary shell commands.
-
-Additional host actions: restart, enable, disable, display (display_scale), logs,
-info, health; reports: doctor, gpu-list, ports, profiles, sdk-status, sdk-images,
-config. Create accepts display_scale. Existing authentication, SSH verification,
-per-host job exclusion, and deletion confirmation still apply.
-
-DOM regression checks: install jsdom in an external test directory and run
-`NODE_PATH=/path/to/node_modules node tests/workbench-ui.cjs`. Backend tests:
-`PYTHONPATH=src python -m unittest discover -s tests`.
+Run Python tests with PYTHONPATH=src python -m unittest discover -s tests.
+DOM interaction tests use jsdom:
+NODE_PATH=/path/to/node_modules node tests/workbench-ui.cjs.
+Tests cover stopped identity preservation, runtime port handoff/release, 200-row
+catalog pagination, selective previews, volume/power requests, deletion, creation,
+exports, and failed-SSH inventory retention. Live Windows/SSH/emulator/GPU behavior
+requires verification on the actual host. No browser video streaming, automatic
+AVD import/recovery, cloning, snapshot restore, or automatic SSH provisioning.

@@ -306,7 +306,7 @@ class Workbench:
             return {"message": "scrcpy launched on the server desktop", "pid": process.pid}
         if action == "key":
             key = data.get("key")
-            if key not in (3, 4, 24, 25, 26, 82, 187):
+            if key not in (3, 4, 24, 25, 26, 82, 164, 187):
                 raise ValueError("Unsupported key")
             self.run("-s", serial, "shell", "input", "keyevent", str(key))
         elif action in ("tap", "swipe"):
@@ -366,7 +366,7 @@ def make_handler(workbench, token):
                 return self.respond(401, {"error": "Missing/invalid session token"})
             try:
                 if url.path == "/api/hosts":
-                    return self.respond(200, {"hosts": workbench.hosts.snapshot()})
+                    return self.respond(200, {"hosts": workbench.hosts.snapshot(auto_scan=True)})
                 if url.path == "/api/devices":
                     return self.respond(200, {"devices": workbench.devices()})
                 if url.path == "/api/frame":
