@@ -18,6 +18,19 @@ class HostTests(unittest.TestCase):
         self.hosts.save({"id": "lab", "target": "user@lab", "endpoint_host": "lab"})
         self.hosts.inventory["lab"] = [{"id": "01"}]
 
+    def test_remove_connection_never_runs_remote_command(self):
+        with patch.object(self.hosts, "command") as command:
+            self.hosts.action({"host": "lab", "action": "remove"})
+        command.assert_not_called()
+        self.assertEqual(self.hosts.snapshot(), [])
+        self.assertEqual(Hosts(self.hosts.state).snapshot(), [])
+
+    def test_remove_busy_connection_rejected(self):
+        self.hosts.jobs["lab"] = {"state": "running"}
+        with self.assertRaises(ValueError):
+            self.hosts.action({"host": "lab", "action": "remove"})
+        self.assertIn("lab", self.hosts.profiles)
+
     def test_reject_ssh_and_profile_injection(self):
         for target in ("-oProxyCommand=bad", "user@host;id", "user@host bad"):
             with self.assertRaises(ValueError):

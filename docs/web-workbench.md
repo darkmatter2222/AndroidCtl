@@ -1,4 +1,4 @@
-# AndroidCtl catalog and screen workspace
+# AndroidCtl management console
 
 The catalog models an instance as a persistent reservation: server + instance ID,
 AVD storage, Android image, hardware configuration, default resolution, and stable
@@ -50,6 +50,39 @@ successfully scanned server with no registered instances. Actual errors are show
 SSH login, host-key, command availability and malformed-output errors are not all
 reported as an incorrect IP address.
 
+## Object navigation
+
+The resizable Explorer is the primary navigation. Connections is the root view.
+Local controller contains unmanaged USB/local ADB and saved network devices.
+Each remote server contains all registered Android instances, including stopped
+ones. A USB device attached to the controller never belongs to a remote server.
+Search the tree by server, instance name/ID/state/port or device identity. Use
+arrow keys to move/expand/collapse and Enter to select. Breadcrumbs return to parents.
+
+Actions are scoped to the selected object:
+
+- Connections: Add server and refresh.
+- Local controller: Scan ADB and add a network device.
+- Server: Scan instances, Create instance, Edit connection, Remove connection.
+- Instance: Start, Stop, Power cycle, Delete instance and refresh.
+- Controller device: Connect, Disconnect, Edit name and Remove saved connection.
+
+There is no global Create instance action. Creation is bound to the selected
+server and requires verified inventory. Editing retains the server identifier.
+Removing a connection only removes the controller profile and its inventory cache;
+it does not run a remote command or delete Android data. Attached USB devices
+remain discoverable after removing a saved connection.
+
+Server tabs separate Instances, Connection, Diagnostics and Console. Instance tabs
+separate Summary, Configuration and Console. Each Console shows only devices owned
+by the selected object. Opening a console is explicit; neither inventory discovery
+nor selecting a tree node starts screenshot capture. The bottom operations pane
+shows the latest operation per server with expandable output, not a durable task
+history. Refreshes preserve object selection.
+
+The navigation design follows the resource tree, selected-object content and
+operations pane documented in the [Proxmox GUI guide](https://github.com/proxmox/pve-docs/blob/master/pve-gui.adoc).
+
 ## Catalog
 
 Select a server in the sidebar. The main view shows:
@@ -65,12 +98,12 @@ Running means systemd reports an active service; Health probes Android readiness
 Disk allocation is configured capacity, not measured host disk usage. Cached rows
 are historical: the Linux host validates each mutation against actual state.
 
-Reserve Android creates a stopped AVD and stable endpoint. It suggests an unused
+Server → Create instance creates a stopped AVD and stable endpoint. It suggests an unused
 ID and refuses an existing ID both in the UI and on the host. Choose name, resource
 preset, default resolution, and advanced image/profile/API/disk settings. Required
 SDK images must already be installed; there is no unattended license acceptance.
 
-Start existing instance boots the selected reservation. Stop shuts Android down and
+Instance → Start boots the selected reservation. Stop shuts Android down and
 retains the reservation and storage. Power cycle uses AndroidCtl's graceful
 stop/start operation on the same ID. No new AVD is created.
 
@@ -106,14 +139,14 @@ instances are stopped. The field proposes a new value, not a reported current
 limit; Server configuration shows the current setting. Saving a higher limit does
 not bypass RAM/CPU admission checks or start any instances.
 
-## Screen workspace and device controls
+## Scoped consoles and device controls
 
-Show screen connects the selected running reservation over its public ADB endpoint
+Open console connects the selected running reservation over its public ADB endpoint
 and opens its tile. Open scrcpy connects and opens native video/control on the
 controller. A native desktop session and installed scrcpy are required.
 
 Catalog entries do not create preview tiles until opened. Captures only run in the
-screen workspace, for visible online tiles, while the page is visible. At most two
+selected object’s Console tab, for visible online tiles, while the page is visible. At most two
 captures and eight total ADB subprocesses run concurrently. Browser previews are
 periodic PNG screenshots (1/2/5 seconds), not video. Use scrcpy for smooth video.
 Actual Android/GPU performance is separate from browser preview cadence.
@@ -157,7 +190,7 @@ status/images and server configuration are also available.
 | CLI capability | UI |
 | --- | --- |
 | inventory/list | Catalog, with saved state on scan failure |
-| create | Reserve Android |
+| create | Selected server → Create instance |
 | start/stop/restart | Selected instance: Start, Stop, Power cycle |
 | enable/disable | Autostart controls |
 | delete | Typed deletion dialog |
@@ -167,7 +200,7 @@ status/images and server configuration are also available.
 | performance/doctor/gpu list/ports/profiles | Server diagnostics |
 | sdk status/images, config show | Server diagnostics |
 | config set max_running_instances | Save concurrency limit |
-| ADB keys, tap/swipe, connect/disconnect | Screen workspace |
+| ADB keys, tap/swipe, connect/disconnect | Selected object → Console |
 | scrcpy | Open scrcpy / Open live view |
 | Interactive shells, fleet setup, SDK mutations, arbitrary config edits | CLI |
 

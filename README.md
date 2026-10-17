@@ -455,13 +455,18 @@ If these tools help you, **star the repositories you use**: [AndroidCtl](https:/
 Bug reports, reproducible evidence and documentation improvements are welcome too.
 
 
-### Persistent instance catalog
+### Object-based management console
 
-The local web app now opens an instance catalog: select a server, inspect all
+The local web app opens a resource explorer. Select a server to inspect all
 reserved Android identities (including stopped devices), and start, stop or power
 cycle them without recreating their storage. Search, state filters and pagination
 support large inventories. Open only the screens you need in the separate screen
-workspace, with scrcpy, volume/mute and screen-power controls.
+console scoped to its owning server or controller device, with scrcpy, volume/mute and screen-power controls.
+
+USB/local devices live under Local controller. Each server owns its running and
+stopped instances. Context toolbars provide add, edit, remove, create and lifecycle
+actions for the selected object. The explorer supports search, collapse/expand and
+keyboard navigation. Connection removal preserves remote Android storage.
 
 New web reservations allocate internal emulator ports only while running, retaining
 a stable public ADB endpoint and persistent AVD. Legacy fixed-port instances remain

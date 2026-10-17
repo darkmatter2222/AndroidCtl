@@ -134,6 +134,26 @@ class Hosts:
                 raise ValueError("Unknown host")
             if self.jobs.get(ident, {}).get("state") == "running":
                 raise ValueError("Host operation already in progress")
+            if action == "remove":
+                remaining = {key: value for key, value in self.profiles.items() if key != ident}
+                tmp = self.state.with_suffix(".tmp")
+                tmp.write_text(json.dumps(remaining, indent=2))
+                os.replace(tmp, self.state)
+                self.profiles = remaining
+                self.inventory.pop(ident, None)
+                self.observed.pop(ident, None)
+                self.attempted.discard(ident)
+                self.jobs.pop(ident, None)
+                if self.cache_path.exists():
+                    cached = {
+                        key: {"profile": self.profiles[key], "rows": rows, "at": self.observed[key]}
+                        for key, rows in self.inventory.items()
+                        if key in self.profiles and key in self.observed
+                    }
+                    tmp = self.cache_path.with_suffix(".tmp")
+                    tmp.write_text(json.dumps(cached))
+                    os.replace(tmp, self.cache_path)
+                return {"message": "Connection removed; remote instances and storage are unchanged"}
             host = dict(self.profiles[ident])
             args = ["list", "--json"]
             reports = {

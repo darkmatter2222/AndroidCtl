@@ -3,6 +3,7 @@ const $=id=>document.getElementById(id);
 const token=new URLSearchParams(location.hash.slice(1)).get('token')||sessionStorage.getItem('androidctl-token')||'';
 sessionStorage.setItem('androidctl-token',token);history.replaceState(null,'',location.pathname);
 const tiles=new Map();const opened=new Set();let paused=false,dragged=null;let currentView='catalog',selectedHost='',selectedInstance='',catalogPage=0;
+let selection={kind:'root'},section='Summary',devices=[];const collapsed=new Set();
 let order;try{order=JSON.parse(localStorage.getItem('androidctl-order')||'[]');if(!Array.isArray(order))order=[];}catch{order=[];}
 function notice(text,error=false){$('notice').textContent=text;$('notice').classList.toggle('error',error);}
 async function api(path,data){const response=await fetch(path,{method:data?'POST':'GET',headers:{'X-AndroidCtl-Token':token,...(data?{'Content-Type':'application/json'}:{})},body:data?JSON.stringify(data):undefined});if(!response.ok){const result=await response.json();throw Error(result.error||response.statusText);}return response;}
@@ -36,23 +37,14 @@ function point(e){const r=img.getBoundingClientRect();return [Math.max(0,Math.mi
 img.onpointerdown=e=>{if(!t.armed||!img.naturalWidth||t.device.state!=='device')return;start=point(e);img.setPointerCapture(e.pointerId);};img.onpointercancel=()=>start=null;img.onpointerup=async e=>{if(!start)return;const first=start;start=null;const end=point(e);try{await action(device.serial,Math.hypot(end[0]-first[0],end[1]-first[1])<15?'tap':'swipe',{points:Math.hypot(end[0]-first[0],end[1]-first[1])<15?first:[...first,...end]});}catch(err){notice(err.message,true);}};
 $('grid').append(el);return t;}
 function stopPreview(t,message){t.epoch++;const img=t.el.querySelector('img');img.removeAttribute('src');if(t.url){URL.revokeObjectURL(t.url);t.url=null;}t.el.querySelector('.screen span').textContent=message;t.el.querySelector('.stats').textContent=message;}
-async function refresh(){const result=await(await api('/api/devices')).json();const seen=new Set();for(const d of result.devices){if(d.managed&&!opened.has(d.serial))continue;seen.add(d.serial);let t=tiles.get(d.serial);if(!t){t=createTile(d);tiles.set(d.serial,t);}t.device=d;managedControls(t);if(currentView==='live'&&d.state==='device'&&!t.displayLoaded){t.displayLoaded=true;t.loadDisplay().catch(e=>{t.displayLoaded=false;notice(e.message,true);});}for(const b of t.el.querySelectorAll('button')){if(['Open live view','Inspect','Apply now','Restart','Read resolutions'].includes(b.textContent))b.disabled=d.state!=='device';if(b.classList.contains('device-key'))b.disabled=d.state!=='device';}if(d.state!=='device')stopPreview(t,d.state==='disconnected'?'Disconnected — previews stopped':d.state);const operation=t.el.querySelector('.operation');operation.textContent=d.operation?d.operation.message:'';t.el.querySelector('.identity').textContent=d.name;t.el.querySelector('.state').textContent=d.state;t.el.querySelector('.state').classList.toggle('online',d.state==='device');t.el.querySelector('.meta').textContent=d.serial+' · '+(d.managed?'Android: '+d.managed.state+' · ADB: '+d.state:(d.details||'saved endpoint'));}for(const [s,t] of tiles){if(!seen.has(s)){t.el.remove();if(t.url)URL.revokeObjectURL(t.url);tiles.delete(s);}}for(const s of order){if(tiles.has(s))$('grid').append(tiles.get(s).el);}$('count').textContent=result.devices.filter(d=>d.state==='device').length+' online / '+result.devices.length+' devices';$('empty').hidden=tiles.size>0;filterTiles();}
-async function frame(t){if(currentView!=='live'||t.el.hidden||t.busy||paused||t.previewPaused||document.hidden||t.device.state!=='device')return;t.busy=true;const epoch=t.epoch;const start=performance.now();try{const blob=await(await api('/api/frame?serial='+encodeURIComponent(t.device.serial))).blob();if(!t.el.isConnected||t.epoch!==epoch||t.device.state!=='device')return;const url=URL.createObjectURL(blob);const img=t.el.querySelector('img');img.src=url;if(t.url)URL.revokeObjectURL(t.url);t.url=url;t.el.querySelector('.screen span').textContent='';t.el.querySelector('.stats').textContent=`${new Date().toLocaleTimeString()} · ${Math.round(performance.now()-start)} ms · ${Math.round(blob.size/1024)} KiB`;}catch(e){if(t.epoch===epoch)t.el.querySelector('.stats').textContent='Preview error: '+e.message;}finally{t.busy=false;}}
+async function refresh(){const result=await(await api('/api/devices')).json();devices=result.devices;const seen=new Set();for(const d of result.devices){if(!opened.has(d.serial))continue;seen.add(d.serial);let t=tiles.get(d.serial);if(!t){t=createTile(d);tiles.set(d.serial,t);}t.device=d;managedControls(t);if(currentView==='live'&&d.state==='device'&&!t.displayLoaded){t.displayLoaded=true;t.loadDisplay().catch(e=>{t.displayLoaded=false;notice(e.message,true);});}for(const b of t.el.querySelectorAll('button')){if(['Open live view','Inspect','Apply now','Restart','Read resolutions'].includes(b.textContent))b.disabled=d.state!=='device';if(b.classList.contains('device-key'))b.disabled=d.state!=='device';}if(d.state!=='device')stopPreview(t,d.state==='disconnected'?'Disconnected — previews stopped':d.state);const operation=t.el.querySelector('.operation');operation.textContent=d.operation?d.operation.message:'';t.el.querySelector('.identity').textContent=d.name;t.el.querySelector('.state').textContent=d.state;t.el.querySelector('.state').classList.toggle('online',d.state==='device');t.el.querySelector('.meta').textContent=d.serial+' · '+(d.managed?'Android: '+d.managed.state+' · ADB: '+d.state:(d.details||'saved endpoint'));}for(const [s,t] of tiles){if(!seen.has(s)){t.el.remove();if(t.url)URL.revokeObjectURL(t.url);tiles.delete(s);}}for(const s of order){if(tiles.has(s))$('grid').append(tiles.get(s).el);}$('count').textContent=result.devices.filter(d=>d.state==='device').length+' online / '+result.devices.length+' devices';$('empty').hidden=tiles.size>0;filterTiles();renderServerNav();if(selection.kind==='controller'||selection.kind==='root')renderObject();}
+async function frame(t){if(currentView!=='live'||t.el.hidden||t.busy||paused||t.previewPaused||document.hidden||t.device.state!=='device')return;t.busy=true;const epoch=t.epoch;const start=performance.now();try{const blob=await(await api('/api/frame?serial='+encodeURIComponent(t.device.serial))).blob();if(currentView!=='live'||t.el.hidden||!t.el.isConnected||t.epoch!==epoch||t.device.state!=='device')return;const url=URL.createObjectURL(blob);const img=t.el.querySelector('img');img.src=url;if(t.url)URL.revokeObjectURL(t.url);t.url=url;t.el.querySelector('.screen span').textContent='';t.el.querySelector('.stats').textContent=`${new Date().toLocaleTimeString()} · ${Math.round(performance.now()-start)} ms · ${Math.round(blob.size/1024)} KiB`;}catch(e){if(t.epoch===epoch)t.el.querySelector('.stats').textContent='Preview error: '+e.message;}finally{t.busy=false;}}
 $('refresh').onclick=safely(refresh);$('pause').onclick=()=>{paused=!paused;$('pause').textContent=paused?'Resume previews':'Pause previews';};$('width').oninput=()=>document.documentElement.style.setProperty('--tile',$('width').value+'px');$('close').onclick=()=>$('info').close();
 async function loop(){const pending=[...tiles.values()];async function worker(){while(pending.length)await frame(pending.shift());}await Promise.all([worker(),worker()]);setTimeout(loop,Number($('rate').value));}safely(refresh)();loop();setInterval(()=>{if(!document.hidden)safely(refresh)();},10000);
 
 async function hostAction(data){const result=await(await api('/api/host-action',data)).json();notice(result.message);await refreshHosts();return result;}
-function managedControls(t){const m=t.device.managed,box=t.el.querySelector('.managed');if(!m){box.replaceChildren();return;}const signature=JSON.stringify(m);if(t.managedSignature===signature)return;t.managedSignature=signature;box.replaceChildren();const label=document.createElement('span');label.textContent=`${m.host} / ${m.id} · ${m.state} · ${m.gpu} · ${m.cpus} CPU / ${m.ram} MiB`;box.append(label);
-button(box,'Start instance',()=>hostAction({host:m.host,instance:m.id,action:'start'}));
-button(box,'Stop instance',async()=>{if(confirm('Stop Android instance '+m.id+' completely? Running apps/agents will be interrupted.')){stopPreview(t,'Stopping instance');await hostAction({host:m.host,instance:m.id,action:'stop'});}});
-const more=document.createElement('details');more.innerHTML='<summary>Instance settings</summary>';box.append(more);
-const renderer=document.createElement('select');renderer.setAttribute('aria-label','Renderer');renderer.add(new Option('Host GPU (single NVIDIA or single Mesa)','host'));renderer.add(new Option('Software SwANGLE (rollback)','swangle'));more.append(renderer);
-button(more,'Set renderer (stopped)',()=>hostAction({host:m.host,instance:m.id,action:'renderer',gpu:renderer.value}));
-button(box,'Delete…',()=>instanceDialog(t,'delete'));
-button(more,'Default resolution…',()=>instanceDialog(t,'display'));
-button(more,m.autostart?'Disable autostart':'Start on server boot',()=>hostAction({host:m.host,instance:m.id,action:m.autostart?'disable':'enable'}));
-button(more,'Restart instance',async()=>{if(confirm('Restart Android instance '+m.id+'? Running apps will be interrupted.'))await hostAction({host:m.host,instance:m.id,action:'restart'});});
-for(const [label,act]of [['Recent logs','logs'],['Instance info','info'],['Health check','health']])button(more,label,async()=>{await hostAction({host:m.host,instance:m.id,action:act});showView('catalog');});
+function managedControls(t){
+ const m=t.device.managed,box=t.el.querySelector('.managed');box.replaceChildren();if(m){const label=document.createElement('span');label.textContent='Owner: '+m.host+' / '+m.id+' · Android '+m.state;box.append(label);}
 }
 let hosts=[],flow=null,hostSnapshot="";
 function field(label,key,value='',type='text',hint=''){
@@ -67,13 +59,14 @@ function selectField(label,key,options,value){
  for(const [v,l] of options)sel.add(new Option(l,v));if(value)sel.value=value;wrap.append(sel);$('wizard-fields').append(wrap);return sel;
 }
 function openFlow(kind,data={}){
- flow={kind,step:0,data};showView('catalog');renderFlow();$('wizard').showModal();
+ if(kind==='create'&&!data.host)throw Error('Select a server first.');
+ flow={kind,step:0,data};renderFlow();$('wizard').showModal();
 }
 function renderFlow(){
  const {kind,step,data:d}=flow;const fields=$('wizard-fields');fields.replaceChildren();$('wizard-error').textContent='';
  $('wizard-progress').textContent=step===0?'Step 1 of 2 · Configure':'Step 2 of 2 · Review';
- $('wizard-back').hidden=step===0;$('wizard-next').disabled=false;$('wizard-next').textContent=step===0?'Review':({device:'Connect device',server:'Save and test connection',create:'Reserve instance'})[kind];
- $('wizard-title').textContent=({device:'Connect a device',server:'Set up an Android server',create:'Reserve a virtual Android'})[kind];
+ $('wizard-back').hidden=step===0;$('wizard-next').disabled=false;$('wizard-next').textContent=step===0?'Review':({device:'Connect device',server:'Save and test connection',create:'Create instance'})[kind];
+ $('wizard-title').textContent=({device:'Connect a device',server:'Set up an Android server',create:'Create Android instance'})[kind];
  $('wizard-description').textContent=({device:'Choose how this device connects. We will build the address for you.',server:'Enter the Linux server running AndroidCtl. Use your normal SSH username.',create:'Reserve a persistent identity, disk and ADB port. Android starts only when you choose Start.'})[kind];
  if(step===1){
   const review=document.createElement('dl');
@@ -90,13 +83,13 @@ function renderFlow(){
   const name=field('Display name (optional)','name',d.name||'');name.required=false;
   if(method.value==='pair'){field('Pairing port','pairPort',d.pairPort||'','number','From “Pair device with pairing code” on the phone; different from the debugging port.');field('Six-digit pairing code','code','','password').pattern='[0-9]{6}';}
  }else if(kind==='server'){
-  field('Server name','id',d.id||'databrick','text','A short label, e.g. databrick.').pattern='[A-Za-z0-9][A-Za-z0-9_.-]*';
+  const identity=field('Server identifier','id',d.id||'databrick','text','Stable connection identifier.');identity.pattern='[A-Za-z0-9][A-Za-z0-9_.-]*';identity.readOnly=!!d.editing;
   field('Server IP address or hostname','address',d.address||'','text','Example: 192.168.86.48').pattern='[A-Za-z0-9][A-Za-z0-9_.-]*';
   field('SSH username','user',d.user||'','text','Example: darkmatter2222. Enter only your username.').pattern='[A-Za-z0-9_][A-Za-z0-9_.-]*';
   field('SSH port','port',d.port||'22','number');
  }else{
   if(!hosts.length){fields.textContent='Set up a server first using Servers → Set up server.';$('wizard-next').disabled=true;return;}
-  const available=hosts.filter(h=>h.inventory_known&&h.operation?.state!=='error'&&h.operation?.state!=='running');
+  const available=hosts.filter(h=>h.id===d.host&&h.inventory_known&&h.operation?.state!=='error'&&h.operation?.state!=='running');
   if(!available.length){fields.textContent='Wait for a successful server scan before creating a new instance. Existing instances are listed under Servers.';$('wizard-next').disabled=true;return;}
   const choice=selectField('Android server','host',available.map(h=>[h.id,h.id+' · '+h.endpoint_host]),d.host||selectedHost);
   const selected=available.find(h=>h.id===choice.value);const used=new Set(selected.instances.map(i=>Number(i.id)));
@@ -130,17 +123,15 @@ $('wizard-form').onsubmit=async e=>{
    await hostAction({action:'save',id:d.id,target:d.user+'@'+d.address,endpoint_host:d.address,port:Number(d.port)});
    await hostAction({action:'scan',host:d.id});
   }else await hostAction({action:'create',host:d.host,instance:d.instance,ram:d.ram,cpus:d.cpus,api:Number(d.api),profile:d.profile,display_scale:Number(d.display_scale),runtime_ports:true,name:d.instance_name||'',disk:d.disk,image:d.image});
-  $('wizard').close();if(kind==='device')showView('live');if(kind!=='device'){showView('catalog');await refreshHosts();}
+  $('wizard').close();if(kind==='device')navigate({kind:'controller'});if(kind==='server')navigate({kind:'server',host:d.id});if(kind!=='device'){await refreshHosts();}
  }catch(err){$('wizard-error').textContent=err.message;}
  finally{$('wizard-next').disabled=false;$('wizard-back').disabled=false;$('wizard-close').disabled=false;}
 };
 $('wizard-back').onclick=()=>{flow.step=0;renderFlow();};
 $('wizard-close').onclick=()=>$('wizard').close();
 $('wizard').addEventListener('cancel',e=>{if($('wizard-close').disabled)e.preventDefault();});
-for(const id of ['add','empty-add'])$(id).onclick=()=>openFlow('device');
-for(const id of ['server-add','empty-host'])$(id).onclick=()=>openFlow('server');
-$('new-instance').onclick=()=>openFlow('create');
-$('manage-hosts').onclick=safely(async()=>{await refreshHosts();showView('catalog');});
+$('empty-add').onclick=()=>openFlow('device');
+$('empty-host').onclick=()=>openFlow('server');
 
 function hostHelp(message){
  if(/resolve hostname/i.test(message))return 'Check the server IP and username using Edit connection. The SSH target must include both.';
@@ -156,9 +147,9 @@ function hostHelp(message){
 }
 async function refreshHosts(){
  const result=await(await api('/api/hosts')).json();hosts=result.hosts;
- renderServerNav();const snapshot=JSON.stringify(hosts);if(snapshot===hostSnapshot)return;hostSnapshot=snapshot;
+ renderServerNav();renderTasks();const snapshot=JSON.stringify(hosts);if(snapshot===hostSnapshot)return;hostSnapshot=snapshot;
  const box=$('host-list');box.replaceChildren();
- if(!hosts.length){box.textContent='No servers yet. Add one to manage Android instances.';renderCatalog();return;}
+ if(!hosts.length){box.textContent='No servers yet. Add one to manage Android instances.';renderObject();return;}
  for(const h of hosts){
   const card=document.createElement('section');card.className='server-card';card.dataset.host=h.id;card.hidden=h.id!==selectedHost;const title=document.createElement('h3');title.textContent=h.id;card.append(title);
   const meta=document.createElement('p');meta.textContent='SSH: '+h.target+':'+h.port+' · Device address: '+h.endpoint_host;card.append(meta);
@@ -177,11 +168,11 @@ async function refreshHosts(){
 
 
   for(const [label,act]of [['Performance report','diagnostics'],['System check','doctor'],['GPU devices','gpu-list'],['Port map','ports'],['Hardware profiles','profiles'],['SDK status','sdk-status'],['SDK images','sdk-images'],['Server configuration','config']])button(reports,label,()=>hostAction({host:h.id,action:act})).disabled=op?.state==='running';
-  button(controls,'Edit connection',()=>{const at=h.target.indexOf('@');openFlow('server',{id:h.id,address:h.endpoint_host,user:at>=0?h.target.slice(0,at):'',port:h.port});}).disabled=op?.state==='running';
+  button(controls,'Edit connection',()=>{const at=h.target.indexOf('@');openFlow('server',{id:h.id,address:h.endpoint_host,user:at>=0?h.target.slice(0,at):'',port:h.port,editing:true});}).disabled=op?.state==='running';
   button(controls,'Create a new instance…',()=>openFlow('create',{host:h.id})).disabled=op?.state==='running'||!h.inventory_known||op?.state==='error';
   box.append(card);
  }
- renderCatalog();
+ renderObject();
 }
 safely(refreshHosts)();setInterval(()=>{if(!document.hidden)safely(refreshHosts)();},3000);
 
@@ -216,7 +207,13 @@ $('instance-form').onsubmit=async e=>{
  catch(err){$('instance-error').textContent=err.message;}
  finally{$('instance-submit').disabled=false;}
 };
-function filterTiles(){const q=$('filter').value.trim().toLowerCase();for(const t of tiles.values())t.el.hidden=![t.device.name,t.device.serial,t.device.state,t.device.managed?.host].join(' ').toLowerCase().includes(q);}
+function belongs(d){
+ if(selection.kind==='instance')return d.serial===instanceSerial();
+ if(selection.kind==='device')return d.serial===selection.serial;
+ if(selection.kind==='server')return d.managed?.host===selection.host;
+ return selection.kind==='controller'&&!d.managed;
+}
+function filterTiles(){const q=$('filter').value.trim().toLowerCase();for(const t of tiles.values())t.el.hidden=!belongs(t.device)||![t.device.name,t.device.serial].join(' ').toLowerCase().includes(q);}
 $('filter').oninput=filterTiles;
 function download(filename,content,type){
  const url=URL.createObjectURL(new Blob([content],{type}));const a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
@@ -253,15 +250,9 @@ function serverInstance(h,i){
  const title=document.createElement('h4');title.textContent=String(i.id).padStart(2,'0')+' · '+i.name;
  const badge=document.createElement('span');badge.className='state';badge.textContent=i.state||'unknown';title.append(badge);row.append(title);
  const meta=document.createElement('p');meta.className='muted';meta.textContent='API '+i.api+' · '+i.cpu_cores+' CPU · '+i.ram_mb+' MiB RAM · '+i.disk_size+' disk allocation · '+i.gpu_mode+' · '+(i.display_scale?i.display_scale+'% resolution':'existing resolution');row.append(meta);
- const controls=document.createElement('div');controls.className='controls';row.append(controls);
  const id=String(i.id).padStart(2,'0');const serial=h.endpoint_host+':'+i.remote_adb_port;
  const busy=h.operation?.state==='running'||['starting','stopping','booting'].includes(i.state);
- const mutate=async actionName=>{await hostAction({host:h.id,instance:id,action:actionName});};
- button(controls,'Start existing instance',()=>mutate('start')).disabled=busy||i.state==='running';
- button(controls,'Stop',async()=>{if(confirm('Stop instance '+id+'? Its apps and storage will be kept.'))await mutate('stop');}).disabled=busy||i.state==='stopped';
- button(controls,'Show screen',async()=>{await action(serial,'connect');await refresh();showView('live');const t=tiles.get(serial);if(t){t.el.hidden=false;t.el.scrollIntoView?.({behavior:'smooth'});}}).disabled=busy||i.state!=='running';
- for(const [label,key]of [['Volume −',25],['Volume +',24],['Mute',164],['Screen power',26]])button(controls,label,async()=>{await action(serial,'connect');await action(serial,'key',{key});}).disabled=busy||i.state!=='running';
- button(controls,'Open scrcpy',async()=>{await action(serial,'connect');await action(serial,'scrcpy');}).disabled=busy||i.state!=='running';
+ const mutate=action=>hostAction({host:h.id,instance:id,action});
  const details=document.createElement('details');details.innerHTML='<summary>Storage, configuration and more controls</summary>';
  const info=document.createElement('pre');info.textContent='Storage: '+(i.avd||'Not reported')+'\nAutostart: '+(i.autostart?'enabled':'disabled')+'\nADB endpoint: '+serial+'\nService result: '+(i.service_result||'not reported')+'\nHealth: '+(i.health||'not probed');details.append(info);
  const box=document.createElement('div');box.className='controls';details.append(box);
@@ -270,58 +261,101 @@ function serverInstance(h,i){
  button(box,'Save renderer',()=>hostAction({host:h.id,instance:id,action:'renderer',gpu:renderer.value})).disabled=busy||!['stopped','failed'].includes(i.state);
 
  button(box,'Default resolution…',()=>instanceDialog(fake,'display')).disabled=busy;
- button(box,'Delete…',()=>instanceDialog(fake,'delete')).disabled=busy;
  button(box,i.autostart?'Disable autostart':'Enable autostart',()=>mutate(i.autostart?'disable':'enable')).disabled=busy;
- button(box,'Power cycle',async()=>{if(confirm('Power cycle instance '+id+'? Android will stop and start; its storage is preserved.'))await mutate('restart');}).disabled=busy;
  for(const [label,actionName]of [['Logs','logs'],['Health','health'],['Inspect','info']])button(box,label,()=>mutate(actionName)).disabled=busy;
  row.append(details);return row;
 }
 
-function showView(view){
- currentView=view;$('catalog').hidden=view!=='catalog';$('live-workspace').hidden=view!=='live';
- $('manage-hosts').classList.toggle('active',view==='catalog');$('live-nav').classList.toggle('active',view==='live');
- if(view==='live')safely(refresh)();
+function showView(view){section=view==='live'?'Console':'Summary';renderObject();}
+function activeHost(){return hosts.find(h=>h.id===selection.host);}
+function activeInstance(){return activeHost()?.instances.find(i=>String(i.id)===selection.id);}
+function instanceSerial(){const h=activeHost(),i=activeInstance();return i?h.endpoint_host+':'+i.remote_adb_port:'';}
+function navigate(object){
+ for(const t of tiles.values())stopPreview(t,'Preview inactive');
+ selection=object;section=object.kind==='server'?'Instances':'Summary';selectedHost=object.host||'';selectedInstance=object.id||'';catalogPage=0;renderServerNav();renderObject();
 }
-$('live-nav').onclick=()=>showView('live');
+function labelFor(object){if(object.kind==='root')return 'Connections';if(object.kind==='controller')return 'Local controller';if(object.kind==='server')return object.host;if(object.kind==='instance'){const i=hosts.find(h=>h.id===object.host)?.instances.find(i=>String(i.id)===object.id);return object.id+' · '+(i?.name||'Instance');}return devices.find(d=>d.serial===object.serial)?.name||object.serial;}
 function renderServerNav(){
- if(!hosts.some(h=>h.id===selectedHost)){selectedHost=hosts[0]?.id||'';selectedInstance='';catalogPage=0;}
- const nav=$('server-nav');nav.replaceChildren();
- for(const h of hosts){
-  const running=h.instances.filter(i=>['running','starting','booting'].includes(i.state)).length;
-  const b=button(nav,h.id+' · '+running+' running / '+h.instances.length+' saved',()=>{
-   selectedHost=h.id;selectedInstance='';catalogPage=0;showView('catalog');renderServerNav();renderCatalog();
-   for(const card of $('host-list').children)card.hidden=card.dataset.host!==h.id;
-  });b.className='server-link'+(h.id===selectedHost?' active':'');
+ const nav=$('resource-tree'),focusKey=document.activeElement?.dataset.key;nav.replaceChildren();
+ const q=$('tree-search').value.toLowerCase();
+ function node(parent,obj,children=[]){
+  const key=JSON.stringify(obj),item=document.createElement('div');item.setAttribute('role','treeitem');item.setAttribute('aria-selected',String(JSON.stringify(selection)===key));item.dataset.key=key;item.tabIndex=JSON.stringify(selection)===key?0:-1;
+  const line=document.createElement('div');line.className='tree-line';item.append(line);
+  const expanded=!collapsed.has(key)||!!q;
+  if(children.length){item.setAttribute('aria-expanded',String(expanded));const toggle=button(line,expanded?'▾':'▸',()=>{if(collapsed.has(key))collapsed.delete(key);else collapsed.add(key);renderServerNav();});toggle.tabIndex=-1;toggle.setAttribute('aria-label','Expand or collapse '+labelFor(obj));}
+  const text=document.createElement('span');text.textContent=labelFor(obj);line.append(text);
+  const state=obj.kind==='instance'?hosts.find(h=>h.id===obj.host)?.instances.find(i=>String(i.id)===obj.id)?.state:obj.kind==='device'?devices.find(d=>d.serial===obj.serial)?.state:'';
+  if(state){const badge=document.createElement('small');badge.className='tree-state';badge.textContent=state;line.append(badge);}line.onclick=e=>{if(e.target.tagName!=='BUTTON')navigate(obj);};
+  item.onkeydown=e=>{if(e.target!==item)return;const all=[...nav.querySelectorAll('[role=treeitem]')],at=all.indexOf(item);let next;
+   if(e.key==='ArrowDown')next=all[Math.min(at+1,all.length-1)];if(e.key==='ArrowUp')next=all[Math.max(0,at-1)];if(e.key==='Home')next=all[0];if(e.key==='End')next=all.at(-1);
+   if(e.key==='ArrowRight'){collapsed.delete(key);renderServerNav();}if(e.key==='ArrowLeft'){collapsed.add(key);renderServerNav();}if(e.key==='Enter'||e.key===' ')navigate(obj);
+   if(next){all.forEach(n=>n.tabIndex=-1);next.tabIndex=0;next.focus();}if(['ArrowDown','ArrowUp','ArrowLeft','ArrowRight','Home','End','Enter',' '].includes(e.key))e.preventDefault();};
+  parent.append(item);if(children.length&&expanded){const group=document.createElement('div');group.setAttribute('role','group');item.append(group);for(const child of children)node(group,child);}
  }
+ node(nav,{kind:'root'});
+ const local=devices.filter(d=>!d.managed&&[d.name,d.serial].join(' ').toLowerCase().includes(q)).map(d=>({kind:'device',serial:d.serial}));node(nav,{kind:'controller'},local);
+ for(const h of hosts){const matches=h.id.toLowerCase().includes(q);const list=h.instances.filter(i=>matches||[i.id,i.name,i.state,i.remote_adb_port].join(' ').toLowerCase().includes(q));if(matches||list.length)node(nav,{kind:'server',host:h.id},list.map(i=>({kind:'instance',host:h.id,id:String(i.id)})));}
+ if(focusKey){const restored=[...nav.querySelectorAll('[role=treeitem]')].find(n=>n.dataset.key===focusKey);restored?.focus();}
 }
+function properties(parent,rows){const table=document.createElement('table');table.className='properties';for(const [key,value]of rows){const tr=document.createElement('tr');for(const v of [key,value??'Not reported']){const td=document.createElement('td');td.textContent=String(v);tr.append(td);}table.append(tr);}parent.append(table);}
+function renderTasks(){const box=$('task-list');box.replaceChildren();for(const h of hosts){if(!h.operation)continue;const row=document.createElement('details');const summary=document.createElement('summary');summary.textContent=h.id+' · '+h.operation.state+' · '+h.operation.message;const pre=document.createElement('pre');pre.textContent=h.operation.output||h.operation.message;row.append(summary,pre);box.append(row);}}
+function renderObject(){
+ const h=activeHost(),i=activeInstance();currentView=section==='Console'?'live':'catalog';
+ for(const id of ['overview','catalog','catalog-detail','host-list','live-workspace'])$(id).hidden=true;
+ const title=labelFor(selection);$('object-title').textContent=title;$('object-state').textContent=i?.state||'';
+ const crumbs=$('breadcrumbs');crumbs.replaceChildren();button(crumbs,'Connections',()=>navigate({kind:'root'}));if(selection.host)button(crumbs,selection.host,()=>navigate({kind:'server',host:selection.host}));else if(selection.kind!=='root')button(crumbs,'Local controller',()=>navigate({kind:'controller'}));
+ const toolbar=$('context-actions');toolbar.replaceChildren();const busy=h?.operation?.state==='running';
+ if(selection.kind==='root'){button(toolbar,'Add server…',()=>openFlow('server'));button(toolbar,'Refresh',async()=>{await refreshHosts();await refresh();});}
+ if(selection.kind==='controller'){button(toolbar,'Scan ADB',refresh);button(toolbar,'Add network device…',()=>openFlow('device'));}
+ if(selection.kind==='server'&&h){
+  button(toolbar,'Scan instances',()=>hostAction({host:h.id,action:'scan'})).disabled=busy;
+  button(toolbar,'Create instance…',()=>openFlow('create',{host:h.id})).disabled=busy||!h.inventory_known||h.operation?.state==='error';
+  button(toolbar,'Edit connection…',()=>{const at=h.target.indexOf('@');openFlow('server',{id:h.id,address:h.endpoint_host,user:at>=0?h.target.slice(0,at):'',port:h.port,editing:true});}).disabled=busy;
+  button(toolbar,'Remove connection…',async()=>{if(confirm('Remove saved connection '+h.id+'? Its Android instances and storage stay on the server.')){await hostAction({host:h.id,action:'remove'});navigate({kind:'root'});await refresh();}}).disabled=busy;
+ }
+ if(selection.kind==='instance'&&h&&i){
+  const mutate=action=>hostAction({host:h.id,instance:i.id,action});
+  button(toolbar,'Start',()=>mutate('start')).disabled=busy||!['stopped','failed'].includes(i.state);
+  for(const [label,action]of [['Stop','stop'],['Power cycle','restart']])button(toolbar,label,async()=>{if(confirm(label+' '+i.id+' on '+h.id+'? Storage is preserved.'))await mutate(action);}).disabled=busy||i.state!=='running';
+  button(toolbar,'Delete instance…',()=>instanceDialog({device:{managed:{host:h.id,id:i.id}}},'delete')).disabled=busy;
+  button(toolbar,'Refresh',()=>hostAction({host:h.id,action:'scan'})).disabled=busy;
+ }
+ if(selection.kind==='device'){
+  button(toolbar,'Connect',async()=>{await action(selection.serial,'connect');await refresh();});button(toolbar,'Disconnect',async()=>{await action(selection.serial,'disconnect');await refresh();});
+  button(toolbar,'Edit name…',async()=>{const value=prompt('Device name',labelFor(selection));if(value?.trim()){await action(selection.serial,'save',{name:value.trim()});await refresh();renderObject();}});
+  button(toolbar,'Remove saved connection…',async()=>{if(confirm('Forget this connection? Attached USB devices remain discoverable.')){await action(selection.serial,'forget');navigate({kind:'controller'});await refresh();}});
+ }
+ const names=selection.kind==='server'?['Instances','Connection','Diagnostics','Console']:selection.kind==='instance'?['Summary','Configuration','Console']:selection.kind==='device'?['Summary','Console']:selection.kind==='controller'?['Summary','Console']:['Summary'];
+ if(!names.includes(section))section=names[0];const tabs=$('object-tabs');tabs.replaceChildren();for(const name of names){const b=button(tabs,name,()=>{section=name;renderObject();});b.className=name===section?'active':'';b.setAttribute('aria-current',name===section?'page':'false');}
+ if(section==='Console'){
+  const candidates=selection.kind==='instance'?[{serial:instanceSerial(),name:labelFor(selection),state:i?.state==='running'?'device':'stopped'}]:devices.filter(belongs);
+  for(const d of candidates){button(toolbar,'Open '+d.name,()=>openConsole(d.serial)).disabled=d.state==='stopped';}
+  $('live-workspace').hidden=false;filterTiles();$('empty').hidden=[...tiles.values()].some(t=>!t.el.hidden);return;}
+ if(selection.kind==='server'&&h){if(section==='Instances'){$('catalog').hidden=false;renderCatalog();}else{$('host-list').hidden=false;for(const card of $('host-list').children){card.hidden=card.dataset.host!==h.id;const reports=card.querySelectorAll('details');for(const report of reports){const diagnostics=report.querySelector('summary')?.textContent==='Diagnostics and configuration';report.hidden=diagnostics?section!=='Diagnostics':section==='Diagnostics';report.open=true;}for(const controls of card.querySelectorAll(':scope > .controls'))controls.hidden=true;}}return;}
+ const box=$('overview');box.hidden=false;box.replaceChildren();
+ if(selection.kind==='instance'){
+  if(!i){box.textContent='Instance is no longer in this server’s inventory. Select the server to refresh.';return;}
+  if(section==='Configuration'){const detail=$('catalog-detail');detail.hidden=false;detail.replaceChildren(serverInstance(h,i));detail.querySelector('details').open=true;return;}
+  properties(box,[['Owner server',h.id],['Instance ID',i.id],['Name',i.name],['Android state',i.state],['ADB endpoint',instanceSerial()],['Android API',i.api],['CPU cores',i.cpu_cores],['RAM (MiB)',i.ram_mb],['Disk allocation',i.disk_size],['Persistent storage',i.avd],['Renderer',i.gpu_mode],['Default resolution',i.display_scale?i.display_scale+'%':'Unchanged'],['Autostart',i.autostart?'Enabled':'Disabled']]);
+  button(box,'Open console',()=>openConsole(instanceSerial())).disabled=i.state!=='running';for(const [label,act]of [['Logs','logs'],['Health','health'],['Inspect','info']])button(box,label,()=>hostAction({host:h.id,instance:i.id,action:act})).disabled=busy;return;
+ }
+ if(selection.kind==='device'){const d=devices.find(d=>d.serial===selection.serial);properties(box,[['Owner','Local controller'],['Connection',selection.serial.includes(':')?'Network ADB':selection.serial.startsWith('emulator-')?'Local emulator':'USB / local ADB'],['Serial',selection.serial],['State',d?.state],['Details',d?.details]]);button(box,'Open console',()=>openConsole(selection.serial));return;}
+ if(selection.kind==='root'){for(const server of hosts){button(box,server.id,()=>navigate({kind:'server',host:server.id}));properties(box,[['SSH target',server.target],['Inventory',server.inventory_known?server.instances.length+' instances':'Unknown — scan required'],['Last operation',server.operation?.message]]);}button(box,'Local controller',()=>navigate({kind:'controller'}));return;}
+ const table=document.createElement('table');const head=document.createElement('tr');for(const text of ['Device','Connection','State','Actions']){const th=document.createElement('th');th.textContent=text;head.append(th);}table.append(head);
+ for(const d of devices.filter(d=>!d.managed)){const row=document.createElement('tr');const name=document.createElement('td');button(name,d.name,()=>navigate({kind:'device',serial:d.serial}));row.append(name);for(const value of [d.serial,d.state]){const cell=document.createElement('td');cell.textContent=value;row.append(cell);}const actions=document.createElement('td');button(actions,'Open',()=>{navigate({kind:'device',serial:d.serial});return openConsole(d.serial);});row.append(actions);table.append(row);}box.append(table);
+}
+async function openConsole(serial){opened.add(serial);await action(serial,'connect');await refresh();section='Console';renderObject();}
 function renderCatalog(){
- const h=hosts.find(item=>item.id===selectedHost);const rows=$('catalog-rows');rows.replaceChildren();
- $('catalog-refresh').disabled=!h||h.operation?.state==='running';
- if(!h){$('catalog-summary').textContent='Add a server to discover its saved Android instances.';$('catalog-empty').textContent='No server configured.';$('catalog-connection').textContent='';$('catalog-page').textContent='';$('catalog-detail').replaceChildren();return;}
- const running=h.instances.filter(i=>['running','starting','booting'].includes(i.state)).length;
- const stopped=h.instances.filter(i=>i.state==='stopped').length;
- $('catalog-summary').textContent=h.id+'  /  '+h.instances.length+' reserved  ·  '+running+' running / starting  ·  '+stopped+' stopped';
- const op=h.operation;const connection=$('catalog-connection');connection.className=op?.state==='error'?'error':'muted';
- connection.textContent=(op?.state==='error'?hostHelp(op.message)+' '+op.message:op?.state==='running'?op.message:'')+
-  (h.inventory_known?' · '+(h.inventory_stale?'Last known inventory':'Verified inventory')+(h.inventory_at?' '+new Date(h.inventory_at*1000).toLocaleString():''):' · Inventory unavailable; this does not mean the server is empty.');
- const search=$('catalog-search').value.trim().toLowerCase();const state=$('catalog-state').value;const sort=$('catalog-sort').value;
- const filtered=h.instances.filter(i=>(!state||i.state===state)&&[i.id,i.name,i.profile,i.remote_adb_port].join(' ').toLowerCase().includes(search)).sort((a,b)=>sort==='id'?Number(a.id)-Number(b.id):String(a[sort]).localeCompare(String(b[sort])));
- const pages=Math.max(1,Math.ceil(filtered.length/25));catalogPage=Math.min(catalogPage,pages-1);
- $('catalog-page').textContent=filtered.length+' matching · Page '+(catalogPage+1)+' of '+pages;
- $('page-prev').disabled=catalogPage===0;$('page-next').disabled=catalogPage>=pages-1;
- $('catalog-empty').textContent=filtered.length?'':h.inventory_known?'No matching reserved instances.':'Waiting for a successful inventory scan. Your existing instances have not been removed.';
- for(const i of filtered.slice(catalogPage*25,catalogPage*25+25)){
-  const row=document.createElement('tr');row.classList.toggle('selected',String(i.id)===selectedInstance);
-  const name=document.createElement('td');const select=button(name,String(i.id).padStart(2,'0')+' · '+i.name,()=>{selectedInstance=String(i.id);renderCatalog();});select.className='row-select';row.append(name);
-  for(const value of ['API '+i.api,i.state,h.endpoint_host+':'+i.remote_adb_port,i.cpu_cores+' CPU / '+i.ram_mb+' MiB',i.display_scale?i.display_scale+'%':'unchanged']){
-   const cell=document.createElement('td');cell.textContent=value;row.append(cell);
-  }rows.append(row);
- }
- const selected=h.instances.find(i=>String(i.id)===selectedInstance);
- const detail=$('catalog-detail');detail.replaceChildren();
- if(selected){detail.append(serverInstance(h,selected));}
- else{const hint=document.createElement('p');hint.className='muted';hint.textContent='Select a reserved instance to start Android, view its screen, or change settings.';detail.append(hint);}
+ const h=activeHost();if(!h)return;const rows=$('catalog-rows');rows.replaceChildren();
+ $('catalog-summary').textContent=h.inventory_known?h.instances.length+' instances · '+h.instances.filter(i=>i.state==='running').length+' running · '+h.instances.filter(i=>i.state==='stopped').length+' stopped':'Inventory unknown';
+ $('catalog-connection').textContent=(h.operation?.state==='error'?hostHelp(h.operation.message)+' ':'')+(h.operation?.message||'')+(h.inventory_stale?' · Last known inventory; scan to refresh':'')+(h.inventory_at?' · '+new Date(h.inventory_at*1000).toLocaleString():'');
+ const q=$('catalog-search').value.toLowerCase(),state=$('catalog-state').value,sort=$('catalog-sort').value;
+ const filtered=h.instances.filter(i=>(!state||i.state===state)&&[i.id,i.name,i.remote_adb_port].join(' ').toLowerCase().includes(q)).sort((a,b)=>sort==='id'?Number(a.id)-Number(b.id):String(a[sort]).localeCompare(String(b[sort])));
+ const pages=Math.max(1,Math.ceil(filtered.length/25));catalogPage=Math.min(catalogPage,pages-1);$('catalog-page').textContent=filtered.length+' matching · Page '+(catalogPage+1)+' of '+pages;$('page-prev').disabled=!catalogPage;$('page-next').disabled=catalogPage>=pages-1;
+ for(const i of filtered.slice(catalogPage*25,catalogPage*25+25)){const row=document.createElement('tr'),cell=document.createElement('td');button(cell,i.id+' · '+i.name,()=>navigate({kind:'instance',host:h.id,id:String(i.id)}));row.append(cell);for(const v of ['API '+i.api,i.state,h.endpoint_host+':'+i.remote_adb_port,i.cpu_cores+' CPU / '+i.ram_mb+' MiB',i.display_scale+'%']){const td=document.createElement('td');td.textContent=v;row.append(td);}rows.append(row);}
+ $('catalog-empty').textContent=filtered.length?'':h.inventory_known?'No matching instances.':'Inventory unavailable; this does not mean the server is empty.';
 }
-$('catalog-refresh').onclick=safely(()=>hostAction({host:selectedHost,action:'scan'}));
+$('tree-search').oninput=renderServerNav;
 for(const id of ['catalog-search','catalog-state','catalog-sort'])$(id).oninput=()=>{catalogPage=0;renderCatalog();};
 $('page-prev').onclick=()=>{catalogPage--;renderCatalog();};$('page-next').onclick=()=>{catalogPage++;renderCatalog();};
+renderServerNav();renderObject();
